@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   experimental_copyToClipboard as copyToClipboard,
   experimental_Icon as Icon,
@@ -7,10 +7,12 @@ import type { TailscaleInfo } from "../lib/tailscale.ts";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { LoadingText } from "./metric-parts";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { ArrowDataTransferHorizontalIcon } from "@hugeicons/core-free-icons";
 
 const COPIED_MS = 1500;
 
-function CopyValue({ label, value, title }: { label: string; value: string; title?: string }) {
+function CopyValue({ label, value, title, labelControl }: { label: string; value: string; title?: string; labelControl?: ReactNode }) {
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
   const [hovered, setHovered] = useState(false);
   const pointerInside = useRef(false);
@@ -28,7 +30,7 @@ function CopyValue({ label, value, title }: { label: string; value: string; titl
   const tooltip = state === "copied" ? "Copied" : state === "failed" ? "Could not copy" : (title ?? `Copy ${label.toLowerCase()}`);
   return (
     <div className="flex items-center justify-between gap-2 text-xs">
-      <span className="shrink-0 text-subtle-foreground/75">{label}</span>
+      {labelControl ?? <span className="shrink-0 text-subtle-foreground/75">{label}</span>}
       <Tooltip delayDuration={350} disableHoverableContent open={hovered || state !== "idle"} onOpenChange={setHovered}>
         <TooltipTrigger asChild>
           <button
@@ -77,18 +79,67 @@ export function LoadingTailscaleRows({ rows }: { rows: number }) {
   ));
 }
 
+type IpVersion = "IPv4" | "IPv6";
+
+const IP_VERSION_KEY = "beacon:ip-version";
+
+function readIpVersion(): IpVersion {
+  try {
+    return localStorage.getItem(IP_VERSION_KEY) === "IPv6" ? "IPv6" : "IPv4";
+  } catch {
+    return "IPv4";
+  }
+}
+
+function useIpVersion() {
+  const [version, setVersion] = useState<IpVersion>(readIpVersion);
+  const toggle = () => {
+    const next: IpVersion = version === "IPv4" ? "IPv6" : "IPv4";
+    setVersion(next);
+    try {
+      localStorage.setItem(IP_VERSION_KEY, next);
+    } catch {
+      return;
+    }
+  };
+  return { version, toggle };
+}
+
+function IpVersionToggle({ version, onToggle }: { version: IpVersion; onToggle: () => void }) {
+  const other = version === "IPv4" ? "IPv6" : "IPv4";
+  return (
+    <Tooltip delayDuration={350} disableHoverableContent>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-label={`Show ${other}`}
+          className="group/ip -ml-1 flex shrink-0 items-center gap-1 rounded-md px-1 py-0.5 text-subtle-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+        >
+          {version}
+          <HugeiconsIcon icon={ArrowDataTransferHorizontalIcon} className="size-3 opacity-60 group-hover/ip:opacity-100" aria-hidden="true" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="top">Show {other}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+function AddressRow({ ipv4, ipv6 }: { ipv4: string | null; ipv6: string | null }) {
+  const { version, toggle } = useIpVersion();
+  if (ipv4 && ipv6) {
+    const value = version === "IPv6" ? ipv6 : ipv4;
+    return <CopyValue key={version} label={version} value={value} labelControl={<IpVersionToggle version={version} onToggle={toggle} />} />;
+  }
+  if (ipv4) return <CopyValue label="IPv4" value={ipv4} />;
+  return ipv6 ? <CopyValue label="IPv6" value={ipv6} /> : null;
+}
+
 export function TailscaleRows({ tailscale }: { tailscale: TailscaleInfo }) {
   return (
     <>
       <CopyValue label="Name" value={tailscale.dnsName} />
-      {tailscale.ipv4 ? (
-        <CopyValue
-          label="IPv4"
-          value={tailscale.ipv4}
-          title={tailscale.ipv6 ? `Copy IPv4 · IPv6 ${tailscale.ipv6}` : undefined}
-        />
-      ) : null}
-      {tailscale.ipv6 && !tailscale.ipv4 ? <CopyValue label="IPv6" value={tailscale.ipv6} /> : null}
+      <AddressRow ipv4={tailscale.ipv4} ipv6={tailscale.ipv6} />
       {tailscale.tags.length > 0 ? (
         <CopyValue label={tailscale.tags.length === 1 ? "Tag" : "Tags"} value={tailscale.tags.join(", ")} />
       ) : null}
