@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { basename } from "node:path";
-import plugin, { calculateCpuUsage, calculateNetworkRates, parseProcesses } from "../server.ts";
+import plugin, { calculateCpuUsage, calculateNetworkRates, parseProcesses, parseVmStatAvailableBytes } from "../server.ts";
 
 test("CPU deltas handle warmup, idle, full utilization, and counter resets", () => {
   assert.equal(calculateCpuUsage(null, { idle: 0, total: 100 }), null);
@@ -116,4 +116,19 @@ test("long macOS executable paths keep the executable's name", () => {
   const path = `/Applications/${"Nested.app/Contents/Frameworks/".repeat(6)}Helper (Renderer)`;
   const result = parseProcesses(` 7 12.0 1.0 100 S ${path}`, basename);
   assert.equal(result.top[0].name, "Helper (Renderer)");
+});
+
+test("macOS available memory counts reclaimable pages, not only free ones", () => {
+  const vmStat = [
+    "Mach Virtual Memory Statistics: (page size of 16384 bytes)",
+    "Pages free:                               13474.",
+    "Pages active:                           1301626.",
+    "Pages inactive:                          996935.",
+    "Pages speculative:                       330217.",
+    "Pages throttled:                              0.",
+    "Pages wired down:                        251552.",
+    "Pages purgeable:                          35696.",
+  ].join("\n");
+  assert.equal(parseVmStatAvailableBytes(vmStat), (13474 + 996935 + 330217 + 35696) * 16384);
+  assert.equal(parseVmStatAvailableBytes("not vm_stat output"), null);
 });
