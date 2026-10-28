@@ -1,14 +1,14 @@
 # Beacon
 
-See CPU, memory, disk, and processes on the BB server from the footer.
+See CPU, GPU, memory, disk, network, battery and processes for any of your bb machines from the footer.
 
 ![Status in the BB footer](assets/screenshot.jpg)
 
 Status sits in the sidebar footer. Open it while you work. An optional background monitor can toast when CPU or memory stays high. The two collectors do not share a timer.
 
-Beacon reads system counters. It does not change server settings, enable swap, kill processes, or call a monitoring service. It watches the BB server host only, not other enrolled machines or a container's cgroup limit.
+Beacon reads system counters. It does not change settings, enable swap, kill processes, or call a monitoring service. Pick a machine from the menu at the top of the panel. The bb server is marked with a crown, your own machines with a server icon and BB Box boxes with BB Box's cube. Other machines are read by Beacon's host entry, which bb runs on each machine. Container cgroup limits are not shown.
 
-Needs BB 0.43 and Plugin SDK 0.4.87. Network rates are Linux-only.
+Needs BB 0.46 and Plugin SDK 0.6.49.
 
 ## Install
 
@@ -66,6 +66,15 @@ Settings apply without a reload. The dashboard interval does not change the moni
 
 CLI snapshots share the dashboard collector. Repeated calls keep history alive. Reading logs does not.
 
+## Machine details
+
+- **Battery** on macOS (`ioreg`) and Linux (`/sys/class/power_supply`): charge, state, time left, health from full and design capacity, cycles and power. macOS also gives the battery temperature.
+- **CPU and GPU temperature and power on Apple silicon Macs**, plus GPU usage. Temperature comes from the SMC, power from IOReport energy counters, and GPU usage from `ioreg`. None need root.
+- **Tailscale** name, address and tags, read from `tailscale status --json` once a minute, with copy buttons.
+- **WSL** machines show Windows' network traffic from `netstat.exe -e`.
+
+The temperature and power readings come from a small helper in `native/beacon-sensors.c`. `native/build.sh` builds it on an Apple silicon Mac and embeds it in `lib/mac-sensors-binary.ts` with its SHA-256. Beacon writes it to the user's temporary folder, checks the hash before every first use, and runs it. Rebuild it whenever the C source changes; a test fails if the embedded helper and its recorded hash disagree.
+
 ## What the numbers mean
 
 CPU percent is the change between samples. The first sample has no percent. Per-core values follow the same rule.
@@ -78,7 +87,7 @@ Swap appears only when a swap total greater than zero is readable. Beacon never 
 
 Disk is `/`. Used space is allocated blocks. Available excludes reserved blocks, so used plus available may not equal total.
 
-Network is received and sent bytes per second on the non-loopback interface with the most cumulative traffic. Not a sum of interfaces. Rates go unavailable when the interface changes or counters reset. Linux only.
+Network is received and sent bytes per second on the non-loopback interface with the most cumulative traffic. Not a sum of interfaces. Rates go unavailable when the interface changes or counters reset. Linux reads `/proc/net/dev`, macOS `netstat -ibn` and WSL Windows' `netstat.exe -e`.
 
 Snapshots list six PIDs by lifetime-average CPU, PID as tie-break. The popover shows the first three. Process CPU is relative to one core and can exceed 100%. That is not the sampled host CPU.
 
@@ -135,7 +144,7 @@ No toast appeared. Check both settings, keep BB visible, try `test-alert`. Real 
 
 Logs are empty. Monitoring is off by default.
 
-Network says unavailable. Needs Linux and a readable non-loopback interface, then two samples.
+Network says unavailable. Needs Linux, macOS or WSL and a readable non-loopback interface, then two samples.
 
 A process shows more than 100% CPU. Lifetime average on more than one core.
 
