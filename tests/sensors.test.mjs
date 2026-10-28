@@ -48,6 +48,7 @@ test("a Mac without a battery reports none", () => {
 
 test("reads a Linux laptop battery from sysfs", () => {
   assert.deepEqual(parseLinuxBattery({
+    type: "Battery\n",
     capacity: "64\n",
     status: "Discharging\n",
     power_now: "9500000\n",
@@ -64,6 +65,23 @@ test("reads a Linux laptop battery from sysfs", () => {
     watts: 9.5,
     temperatureC: null,
   });
+});
+
+test("Linux batteries: signed current, missing capacity and peripheral batteries", () => {
+  const discharging = parseLinuxBattery({
+    type: "Battery", status: "Discharging", current_now: "-1000000", voltage_now: "12000000",
+    charge_now: "2000000", charge_full: "4000000",
+  });
+  assert.equal(discharging.percent, 50, "percent comes from charge when capacity is missing");
+  assert.equal(discharging.watts, 12, "a negative discharge current still gives watts");
+  assert.equal(discharging.minutesRemaining, 120, "and time left");
+  assert.equal(parseLinuxBattery({ type: "Battery", scope: "Device", capacity: "80" }), null, "a mouse battery is not the machine's");
+  assert.equal(parseLinuxBattery({ type: "Mains", capacity: "80" }), null);
+});
+
+test("an Intel Mac's capacity in mAh becomes a percentage", () => {
+  const intel = parseMacBattery(['"CurrentCapacity" = 2000', '"MaxCapacity" = 5000', '"ExternalConnected" = No'].join("\n"));
+  assert.equal(intel.percent, 40);
 });
 
 test("reads the sensor helper's output and rejects nonsense", () => {

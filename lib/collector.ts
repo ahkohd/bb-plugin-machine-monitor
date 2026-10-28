@@ -14,7 +14,7 @@ const HISTORY_LIMIT = 72;
 const execFileAsync = promisify(execFile);
 
 export interface CpuTimes { idle: number; total: number }
-interface NetworkTotals { interface: string; rxBytes: number; txBytes: number }
+interface NetworkTotals { interface: string; rxBytes: number; txBytes: number; wrapsAt?: number }
 interface MemoryDetails {
   availableBytes: number;
   cachedBytes: number;
@@ -27,11 +27,20 @@ export function clampPercentage(value: number): number {
   return Math.min(100, Math.max(0, value));
 }
 
+function counterDelta(previous: number, current: number, wrapsAt: number | undefined): number | null {
+  if (current >= previous) return current - previous;
+  return wrapsAt === undefined ? null : current + wrapsAt - previous;
+}
+
 export function calculateNetworkRates(previous: NetworkTotals | null, current: NetworkTotals, elapsedSeconds: number | null) {
-  if (!previous || previous.interface !== current.interface || elapsedSeconds === null || !Number.isFinite(elapsedSeconds) || elapsedSeconds <= 0 || current.rxBytes < previous.rxBytes || current.txBytes < previous.txBytes) {
-    return { rxBytesPerSecond: null, txBytesPerSecond: null };
+  const unmeasured = { rxBytesPerSecond: null, txBytesPerSecond: null };
+  if (!previous || previous.interface !== current.interface || elapsedSeconds === null || !Number.isFinite(elapsedSeconds) || elapsedSeconds <= 0) {
+    return unmeasured;
   }
-  return { rxBytesPerSecond: (current.rxBytes - previous.rxBytes) / elapsedSeconds, txBytesPerSecond: (current.txBytes - previous.txBytes) / elapsedSeconds };
+  const rxDelta = counterDelta(previous.rxBytes, current.rxBytes, current.wrapsAt);
+  const txDelta = counterDelta(previous.txBytes, current.txBytes, current.wrapsAt);
+  if (rxDelta === null || txDelta === null) return unmeasured;
+  return { rxBytesPerSecond: rxDelta / elapsedSeconds, txBytesPerSecond: txDelta / elapsedSeconds };
 }
 
 export function calculateCpuUsage(previous: CpuTimes | null, current: CpuTimes): number | null {
@@ -56,25 +65,28 @@ export function readCpuTimes(cpuList: ReturnType<typeof cpus>): CpuTimes {
   );
 }
 
-const RECLAIMABLE_PAGE_KINDS = ["free", "inactive", "speculative", "purgeable"] as const;
+function vmStatPages(source: string, label: string): number | null {
+  const count = Number(new RegExp(`^${label}:\\s+(\\d+)\\.`, "m").exec(source)?.[1]);
+  return Number.isSafeInteger(count) ? count : null;
+}
 
-export function parseVmStatAvailableBytes(source: string): number | null {
+export function parseVmStatUsedBytes(source: string): number | null {
   const pageSize = Number(/page size of (\d+) bytes/.exec(source)?.[1]);
   if (!Number.isSafeInteger(pageSize) || pageSize <= 0) return null;
-  let pages = 0;
-  for (const kind of RECLAIMABLE_PAGE_KINDS) {
-    const count = Number(new RegExp(`^Pages ${kind}:\\s+(\\d+)\\.`, "m").exec(source)?.[1]);
-    if (!Number.isSafeInteger(count)) return null;
-    pages += count;
-  }
-  return pages * pageSize;
+  const anonymous = vmStatPages(source, "Anonymous pages");
+  const purgeable = vmStatPages(source, "Pages purgeable");
+  const wired = vmStatPages(source, "Pages wired down");
+  const compressed = vmStatPages(source, "Pages occupied by compressor");
+  if (anonymous === null || purgeable === null || wired === null || compressed === null) return null;
+  return (Math.max(0, anonymous - purgeable) + wired + compressed) * pageSize;
 }
 
 export async function readAvailableMemoryBytes(signal: AbortSignal): Promise<number> {
   if (platform() !== "darwin") return freemem();
   try {
     const { stdout } = await execFileAsync("vm_stat", [], { timeout: 1500, maxBuffer: 64 * 1024, signal, env: { ...process.env, LC_ALL: "C" } });
-    return Math.min(totalmem(), parseVmStatAvailableBytes(stdout) ?? freemem());
+    const usedBytes = parseVmStatUsedBytes(stdout);
+    return usedBytes === null ? freemem() : Math.max(0, totalmem() - usedBytes);
   } catch {
     return freemem();
   }
@@ -161,13 +173,15 @@ async function readMacNetworkTotals(signal: AbortSignal): Promise<NetworkTotals 
 
 const WINDOWS_NETSTAT = "/mnt/c/Windows/System32/netstat.exe";
 
+const WINDOWS_COUNTER_RANGE = 2 ** 32;
+
 export function parseWindowsNetstat(source: string): NetworkTotals | null {
-  const match = /^Bytes\s+(\d+)\s+(\d+)\s*$/m.exec(source.replace(/\r/g, ""));
-  if (!match) return null;
-  const rxBytes = Number(match[1]);
-  const txBytes = Number(match[2]);
+  const byteRow = /^\S.*?\s(\d+)\s+(\d+)\s*$/m.exec(source.replace(/\r/g, ""));
+  if (!byteRow) return null;
+  const rxBytes = Number(byteRow[1]);
+  const txBytes = Number(byteRow[2]);
   if (!Number.isSafeInteger(rxBytes) || !Number.isSafeInteger(txBytes)) return null;
-  return { interface: "Windows", rxBytes, txBytes };
+  return { interface: "Windows", rxBytes, txBytes, wrapsAt: WINDOWS_COUNTER_RANGE };
 }
 
 let runsInWsl: Promise<boolean> | null = null;
@@ -191,11 +205,14 @@ async function readWindowsNetworkTotals(signal: AbortSignal): Promise<NetworkTot
   }
 }
 
+let windowsCountersSeen = false;
+
 async function readNetworkTotals(signal: AbortSignal): Promise<NetworkTotals | null> {
   if (platform() === "darwin") return readMacNetworkTotals(signal);
   if (await isWsl()) {
     const windows = await readWindowsNetworkTotals(signal);
-    if (windows !== null) return windows;
+    if (windows !== null) windowsCountersSeen = true;
+    if (windows !== null || windowsCountersSeen) return windows;
   }
   if (platform() !== "linux") return null;
   try {

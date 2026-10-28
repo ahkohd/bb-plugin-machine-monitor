@@ -1,7 +1,9 @@
 #include <CoreFoundation/CoreFoundation.h>
 #include <IOKit/IOKitLib.h>
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 typedef struct __IOHIDEventSystemClient *IOHIDEventSystemClientRef;
@@ -101,7 +103,7 @@ static void read_smc_temperatures(int dump, double *cpu, double *gpu) {
     float celsius;
     memcpy(&celsius, bytes, sizeof celsius);
     if (dump) printf("smc\t%s\t%.2f\n", name, celsius);
-    if (celsius <= 0 || celsius > 150 || celsius == (float)(int)celsius) continue;
+    if (!(celsius > 0 && celsius <= 150) || celsius == (float)(int)celsius) continue;
     if (isCpu) { cpuSum += celsius; cpuCount++; }
     if (isGpu) { gpuSum += celsius; gpuCount++; }
   }
@@ -147,7 +149,7 @@ static void read_temperatures(int dump, double *cpu, double *gpu) {
       double celsius = IOHIDEventGetFloatValue(event, TEMPERATURE_EVENT << 16);
       CFRelease(event);
       if (dump) printf("sensor\t%s\t%.2f\n", name, celsius);
-      if (celsius <= 0 || celsius > 150) continue;
+      if (!(celsius > 0 && celsius <= 150)) continue;
       if (name_has(name, "tdie") || name_has(name, "pACC") || name_has(name, "eACC")) {
         cpuSum += celsius;
         cpuCount++;
@@ -184,9 +186,11 @@ static void read_power(int dump, double *cpu, double *gpu) {
     CFRelease(channels);
     return;
   }
+  uint64_t startedAt = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
   CFDictionaryRef first = IOReportCreateSamples(subscription, subscribed, NULL);
   usleep(SAMPLE_MS * 1000);
   CFDictionaryRef second = IOReportCreateSamples(subscription, subscribed, NULL);
+  double seconds = (clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - startedAt) / 1e9;
   CFArrayRef before = first ? CFDictionaryGetValue(first, CFSTR("IOReportChannels")) : NULL;
   CFArrayRef after = second ? CFDictionaryGetValue(second, CFSTR("IOReportChannels")) : NULL;
   double cpuJoules = 0, gpuJoules = 0, gpuFallbackJoules = 0;
@@ -217,9 +221,8 @@ static void read_power(int dump, double *cpu, double *gpu) {
     gpuJoules = gpuFallbackJoules;
     gpuSeen = 1;
   }
-  double seconds = SAMPLE_MS / 1000.0;
-  if (cpuSeen) *cpu = cpuJoules / seconds;
-  if (gpuSeen) *gpu = gpuJoules / seconds;
+  if (cpuSeen && seconds > 0) *cpu = cpuJoules / seconds;
+  if (gpuSeen && seconds > 0) *gpu = gpuJoules / seconds;
   if (second) CFRelease(second);
   if (first) CFRelease(first);
   CFRelease(subscribed);
@@ -228,7 +231,7 @@ static void read_power(int dump, double *cpu, double *gpu) {
 }
 
 static void print_number(const char *key, double value, int last) {
-  if (value < 0) printf("\"%s\":null%s", key, last ? "" : ",");
+  if (!isfinite(value) || value < 0) printf("\"%s\":null%s", key, last ? "" : ",");
   else printf("\"%s\":%.2f%s", key, value, last ? "" : ",");
 }
 

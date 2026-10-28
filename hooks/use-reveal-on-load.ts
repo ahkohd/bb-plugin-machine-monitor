@@ -11,18 +11,19 @@ function prefersReducedMotion(): boolean {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-export function useRevealOnLoad(container: RefObject<HTMLElement | null>, loaded: boolean) {
-  const wasLoading = useRef(!loaded);
+export function useRevealOnLoad(container: RefObject<HTMLElement | null>, machineId: string, loaded: boolean) {
+  const awaitingFirstReading = useRef<string | null>(loaded ? null : machineId);
   useLayoutEffect(() => {
     if (!loaded) {
-      wasLoading.current = true;
+      awaitingFirstReading.current = machineId;
       return;
     }
-    if (!wasLoading.current) return;
-    wasLoading.current = false;
-    if (prefersReducedMotion()) return;
-    container.current?.querySelectorAll("[data-reveal]").forEach((element) => {
-      element.animate(REVEAL_FRAMES, REVEAL_TIMING);
-    });
-  }, [container, loaded]);
+    const firstReading = awaitingFirstReading.current === machineId;
+    awaitingFirstReading.current = null;
+    if (!firstReading || prefersReducedMotion()) return;
+    const animations = Array.from(container.current?.querySelectorAll("[data-reveal]") ?? [], (element) =>
+      element.animate(REVEAL_FRAMES, REVEAL_TIMING),
+    );
+    return () => animations.forEach((animation) => animation.cancel());
+  }, [container, machineId, loaded]);
 }

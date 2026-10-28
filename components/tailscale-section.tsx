@@ -13,19 +13,20 @@ import { ArrowDataTransferHorizontalIcon } from "@hugeicons/core-free-icons";
 const COPIED_MS = 1500;
 
 function CopyValue({ label, value, title, labelControl }: { label: string; value: string; title?: string; labelControl?: ReactNode }) {
-  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
+  const [feedback, setFeedback] = useState<{ status: "copied" | "failed"; value: string } | null>(null);
+  const state = feedback?.value === value ? feedback.status : "idle";
   const [hovered, setHovered] = useState(false);
   const pointerInside = useRef(false);
   useEffect(() => {
-    if (state === "idle") return;
+    if (!feedback) return;
     const timer = setTimeout(() => {
-      setState("idle");
+      setFeedback(null);
       setHovered(pointerInside.current);
     }, COPIED_MS);
     return () => clearTimeout(timer);
-  }, [state]);
+  }, [feedback]);
   const copy = async () => {
-    setState((await copyToClipboard({ text: value })) ? "copied" : "failed");
+    setFeedback({ status: (await copyToClipboard({ text: value })) ? "copied" : "failed", value });
   };
   const tooltip = state === "copied" ? "Copied" : state === "failed" ? "Could not copy" : (title ?? `Copy ${label.toLowerCase()}`);
   return (
@@ -130,7 +131,7 @@ function AddressRow({ ipv4, ipv6 }: { ipv4: string | null; ipv6: string | null }
   const { version, toggle } = useIpVersion();
   if (ipv4 && ipv6) {
     const value = version === "IPv6" ? ipv6 : ipv4;
-    return <CopyValue key={version} label={version} value={value} title={version === "IPv6" ? `Copy ${ipv6}` : undefined} labelControl={<IpVersionToggle version={version} onToggle={toggle} />} />;
+    return <CopyValue label={version} value={value} title={version === "IPv6" ? `Copy ${ipv6}` : undefined} labelControl={<IpVersionToggle version={version} onToggle={toggle} />} />;
   }
   if (ipv4) return <CopyValue label="IPv4" value={ipv4} />;
   return ipv6 ? <CopyValue label="IPv6" value={ipv6} title={`Copy ${ipv6}`} /> : null;

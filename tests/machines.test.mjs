@@ -101,7 +101,9 @@ test("WSL reads Windows' network totals from netstat -e", () => {
     "Bytes                    2217282166      3811487087",
     "Unicast packets            17785704        26580608",
   ].join("\r\n");
-  assert.deepEqual(parseWindowsNetstat(output), { interface: "Windows", rxBytes: 2217282166, txBytes: 3811487087 });
+  assert.deepEqual(parseWindowsNetstat(output), { interface: "Windows", rxBytes: 2217282166, txBytes: 3811487087, wrapsAt: 2 ** 32 });
+  const french = output.replace("Received            Sent", "Reçus            Envoyés").replace("Bytes   ", "Octets  ").replace("Unicast packets", "Paquets unicast");
+  assert.equal(parseWindowsNetstat(french)?.rxBytes, 2217282166, "the byte row is found without its English label");
   assert.equal(parseWindowsNetstat("The system cannot find the path specified."), null);
 });
 

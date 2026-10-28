@@ -51,8 +51,10 @@ function positiveNumber(text: string | undefined): number | null {
 
 export function parseMacBattery(source: string): BatteryInfo | null {
   const fields = ioregFields(source);
-  const percent = Number(fields.get("CurrentCapacity"));
-  if (!fields.has("CurrentCapacity") || !Number.isFinite(percent)) return null;
+  const currentCapacity = Number(fields.get("CurrentCapacity"));
+  if (!fields.has("CurrentCapacity") || !Number.isFinite(currentCapacity)) return null;
+  const maxCapacity = positiveNumber(fields.get("MaxCapacity"));
+  const percent = maxCapacity ? (currentCapacity / maxCapacity) * 100 : currentCapacity;
   const charging = fields.get("IsCharging") === "Yes";
   const pluggedIn = fields.get("ExternalConnected") === "Yes";
   const full = fields.get("FullyCharged") === "Yes";
@@ -90,18 +92,23 @@ export function parseLinuxBattery(files: Record<string, string | undefined>): Ba
     const value = Number(files[name]?.trim());
     return files[name] !== undefined && Number.isFinite(value) ? value : null;
   };
-  const percent = read("capacity");
-  if (percent === null) return null;
-  const state = LINUX_STATES[files.status?.trim() ?? ""] ?? "discharging";
-  const microwatts = read("power_now") ?? (() => {
-    const microamps = read("current_now");
-    const microvolts = read("voltage_now");
-    return microamps !== null && microvolts !== null ? (microamps * microvolts) / 1e6 : null;
-  })();
+  if (files.type?.trim() !== "Battery" || files.scope?.trim() === "Device") return null;
+  const magnitude = (name: string) => {
+    const value = read(name);
+    return value === null ? null : Math.abs(value);
+  };
   const energyNow = read("energy_now") ?? read("charge_now");
   const energyFull = read("energy_full") ?? read("charge_full");
   const energyDesign = read("energy_full_design") ?? read("charge_full_design");
-  const flowNow = read("energy_now") !== null ? microwatts : read("current_now");
+  const percent = read("capacity") ?? (energyNow !== null && energyFull ? (energyNow / energyFull) * 100 : null);
+  if (percent === null) return null;
+  const state = LINUX_STATES[files.status?.trim() ?? ""] ?? "discharging";
+  const microamps = magnitude("current_now");
+  const microwatts = magnitude("power_now") ?? (() => {
+    const microvolts = read("voltage_now");
+    return microamps !== null && microvolts !== null ? (microamps * microvolts) / 1e6 : null;
+  })();
+  const flowNow = read("energy_now") !== null ? microwatts : microamps;
   const hours =
     flowNow && flowNow > 0 && energyNow !== null
       ? state === "discharging"
@@ -123,7 +130,7 @@ export function parseLinuxBattery(files: Record<string, string | undefined>): Ba
 }
 
 const LINUX_FILES = [
-  "type", "capacity", "status", "power_now", "current_now", "voltage_now",
+  "type", "scope", "capacity", "status", "power_now", "current_now", "voltage_now",
   "energy_now", "energy_full", "energy_full_design",
   "charge_now", "charge_full", "charge_full_design", "cycle_count",
 ];
@@ -140,19 +147,27 @@ async function readLinuxBattery(): Promise<BatteryInfo | null> {
     await Promise.all(LINUX_FILES.map(async (name) => {
       files[name] = await readFile(join(POWER_SUPPLY_DIR, supply, name), "utf8").catch(() => undefined);
     }));
-    if (files.type?.trim() !== "Battery") continue;
     const battery = parseLinuxBattery(files);
     if (battery) return battery;
   }
   return null;
 }
 
+const MAC_BATTERY_CACHE_MS = 30_000;
+let macBatteryAbsent = false;
+let macBatteryReading: { battery: BatteryInfo; readAt: number } | null = null;
+
 async function readMacBattery(signal: AbortSignal): Promise<BatteryInfo | null> {
+  if (macBatteryAbsent) return null;
+  if (macBatteryReading && Date.now() - macBatteryReading.readAt < MAC_BATTERY_CACHE_MS) return macBatteryReading.battery;
   try {
     const { stdout } = await execFileAsync("ioreg", ["-rn", "AppleSmartBattery"], { timeout: 1500, maxBuffer: 1024 * 1024, signal });
-    return parseMacBattery(stdout);
+    const battery = parseMacBattery(stdout);
+    macBatteryAbsent = battery === null;
+    macBatteryReading = battery ? { battery, readAt: Date.now() } : null;
+    return battery;
   } catch {
-    return null;
+    return macBatteryReading?.battery ?? null;
   }
 }
 

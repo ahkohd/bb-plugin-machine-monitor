@@ -155,8 +155,8 @@ function bytesParts(bytes: number): { value: string; unit: string } {
   return { value: value ?? "0", unit: unit ?? "B" };
 }
 
-function cpuState(percent: number | null): string {
-  if (percent === null) return "measuring";
+function cpuState(percent: number | null): string | null {
+  if (percent === null) return null;
   if (percent < 25) return "idle";
   if (percent < 75) return "normal";
   return "busy";
@@ -245,7 +245,7 @@ function CpuSection({ snapshot }: { snapshot: ServerSnapshot | null }) {
       pill={!cpu ? <Pill loading>load 0.00</Pill> : temperature === null ? <Pill>load {cpu.loadAverage[0].toFixed(2)}</Pill> : <TemperaturePill celsius={temperature} />}
       details={snapshot ? <CpuDetails snapshot={snapshot} /> : undefined}
     >
-      <BigValue value={cpu?.usagePercent == null ? null : Math.round(cpu.usagePercent)} unit="%" />
+      <BigValue value={cpu?.usagePercent == null ? null : Math.round(cpu.usagePercent)} unit="%" loading={!cpu} />
       <BarChart values={snapshot?.history.map((point) => point.cpuPercent) ?? []} colorFor={colorForPercent} label="CPU usage over the last few minutes" slots={HISTORY_BARS} />
       <Footnote>{cpu ? joinParts([cpuState(cpu.usagePercent), formatWatts(sensors?.cpuWatts) ?? `${cpu.cores} cores`]) : <LoadingText sample="normal · 8 cores" />}</Footnote>
     </MetricSection>
@@ -267,7 +267,7 @@ function MemorySection({ snapshot }: { snapshot: ServerSnapshot | null }) {
         {memory.swapTotalBytes > 0 ? <DetailRow label="Swap" value={`${formatBytes(memory.swapUsedBytes)} of ${formatBytes(memory.swapTotalBytes)}`} /> : null}
       </> : undefined}
     >
-      <BigValue value={memory ? Math.round(memory.usagePercent) : null} unit="%" />
+      <BigValue value={memory ? Math.round(memory.usagePercent) : null} unit="%" loading={!memory} />
       <LineChart series={[{ values: snapshot?.history.map((point) => point.memoryPercent) ?? [], color: METRIC_COLORS.memory }]} max={100} label="Memory usage over the last few minutes" />
       <Footnote>{memory ? `${formatBytes(memory.usedBytes)} / ${formatBytes(memory.totalBytes)}` : <LoadingText sample="8.00 GB / 16 GB" />}</Footnote>
     </MetricSection>
@@ -292,7 +292,7 @@ function DiskSection({ snapshot }: { snapshot: ServerSnapshot | null }) {
         <DetailRow label="Free" value={formatBytes(disk.freeBytes)} />
       </> : undefined}
     >
-      <BigValue value={free ? free.value : null} unit={free?.unit} />
+      <BigValue value={free ? free.value : null} unit={free?.unit} loading={!disk} />
       <ProgressBar value={disk?.usagePercent ?? 0} color={!disk ? METRIC_COLORS.disk : disk.usagePercent >= 95 ? METRIC_COLORS.bad : disk.usagePercent >= 85 ? METRIC_COLORS.warn : METRIC_COLORS.disk} label="Disk usage" />
       <Footnote>{disk ? `${formatBytes(disk.usedBytes)} used · ${Math.round(disk.usagePercent)}%` : <LoadingText sample="250 GB used · 50%" />}</Footnote>
     </MetricSection>
@@ -319,7 +319,7 @@ function NetworkSection({ snapshot }: { snapshot: ServerSnapshot | null }) {
         <DetailRow label="Sent" value={formatBytes(network.txTotalBytes)} />
       </> : undefined}
     >
-      <BigValue value={down ? down.value : null} unit={down ? `${down.unit}/s down` : undefined} />
+      <BigValue value={down ? down.value : null} unit={down ? `${down.unit}/s down` : undefined} loading={!network} />
       <LineChart
         series={[
           { values: history.map((point) => point.networkRxBytesPerSecond), color: METRIC_COLORS.download },
@@ -328,9 +328,9 @@ function NetworkSection({ snapshot }: { snapshot: ServerSnapshot | null }) {
         label="Download and upload over the last few minutes"
       />
       <Footnote>
-        {network?.txBytesPerSecond == null
-          ? <LoadingText sample="● 10 KB/s up" />
-          : <><span style={{ color: METRIC_COLORS.upload }}>●</span> {formatRate(network.txBytesPerSecond)} up</>}
+        {network
+          ? <><span style={{ color: METRIC_COLORS.upload }}>●</span> {formatRate(network.txBytesPerSecond)} up</>
+          : <LoadingText sample="● 10 KB/s up" />}
       </Footnote>
     </MetricSection>
   );
@@ -351,7 +351,7 @@ function GpuSection({ snapshot }: { snapshot: ServerSnapshot | null }) {
         {sensors.gpuWatts !== null ? <DetailRow label="Power" value={formatWatts(sensors.gpuWatts)} /> : null}
       </> : undefined}
     >
-      <BigValue value={sensors?.gpuPercent ?? null} unit="%" />
+      <BigValue value={sensors?.gpuPercent ?? null} unit="%" loading={!sensors} />
       <LineChart series={[{ values: history.map((point) => point.gpuPercent ?? null), color: METRIC_COLORS.gpu }]} max={100} label="GPU usage over the last few minutes" />
       <Footnote>{sensors ? joinParts([cpuState(sensors.gpuPercent), formatWatts(sensors.gpuWatts)]) : <LoadingText sample="idle" />}</Footnote>
     </MetricSection>
@@ -376,7 +376,7 @@ function BatterySection({ snapshot }: { snapshot: ServerSnapshot | null }) {
   if (!battery) {
     return (
       <MetricSection label="Battery" icon={<SectionIcon icon={BatteryFullIcon} color={METRIC_COLORS.good} />} pill={<Pill loading>90% health</Pill>}>
-        <BigValue value={null} unit="%" />
+        <BigValue value={null} unit="%" loading />
         <ProgressBar value={0} color={METRIC_COLORS.good} label="Battery charge" />
         <Footnote><LoadingText sample="Fully charged" /></Footnote>
       </MetricSection>
@@ -521,7 +521,7 @@ function StatusDisclosure({ dismiss }: ExperimentalSidebarFooterDisclosureProps)
   const { machines, selected, setSelected, refresh: refreshMachines } = useMachines();
   const { container, active, snapshot, error, reload, reloading } = useServerSnapshot(selected);
   const errorMessage = error ? loadErrorCopy(error, selectedMachine(machines, selected).name) : "";
-  useRevealOnLoad(container, snapshot !== null);
+  useRevealOnLoad(container, selected, snapshot !== null);
   const expectedShape = useMemo(() => readPanelShape(selected), [selected]);
   const loadedGpu = snapshot ? hasGpuReadings(snapshot) : null;
   const loadedBattery = snapshot ? Boolean(snapshot.battery) : null;

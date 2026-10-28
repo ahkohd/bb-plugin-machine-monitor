@@ -89,7 +89,7 @@ export function BarChart({ values, colorFor, label, slots }: { values: Array<num
       {padded.map((value, index) => (
         <span
           key={index}
-          className="min-w-0 flex-1 rounded-[2px] bg-sidebar-border transition-[height] duration-300 motion-reduce:transition-none"
+          className="min-w-0 flex-1 rounded-[2px] bg-sidebar-border"
           style={{
             height: `${value === null ? 14 : Math.max(14, Math.min(100, value))}%`,
             backgroundColor: value === null ? undefined : colorFor(value),
@@ -143,14 +143,13 @@ export function Pill({ children, tone = "neutral", loading = false }: { children
   );
 }
 
-export function BigValue({ value, unit }: { value: ReactNode | null; unit?: string }) {
-  const measuring = value === null;
+export function BigValue({ value, unit, loading = false }: { value: ReactNode | null; unit?: string; loading?: boolean }) {
   return (
-    <p className="flex items-baseline gap-1 leading-none" aria-label={measuring ? "Measuring" : undefined} data-reveal={measuring ? undefined : ""}>
+    <p className="flex items-baseline gap-1 leading-none" aria-label={loading ? "Loading" : undefined} data-reveal={loading ? undefined : ""}>
       <span className="text-2xl font-semibold tabular-nums tracking-tight text-sidebar-foreground">
-        {measuring ? <LoadingText sample="00" /> : value}
+        {loading ? <LoadingText sample="00" /> : value ?? "–"}
       </span>
-      <span className="text-xs text-muted-foreground">{measuring ? "\u00a0" : unit}</span>
+      <span className="text-xs text-muted-foreground">{loading || value === null ? "\u00a0" : unit}</span>
     </p>
   );
 }

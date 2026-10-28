@@ -73,23 +73,23 @@ CLI snapshots share the dashboard collector. Repeated calls keep history alive. 
 - **Tailscale** name, address and tags, read from `tailscale status --json` once a minute, with copy buttons.
 - **WSL** machines show Windows' network traffic from `netstat.exe -e`.
 
-The temperature and power readings come from a small helper in `native/beacon-sensors.c`. `native/build.sh` builds it on an Apple silicon Mac and embeds it in `lib/mac-sensors-binary.ts` with its SHA-256. Beacon writes it to the user's temporary folder, checks the hash before every first use, and runs it. Rebuild it whenever the C source changes; a test fails if the embedded helper and its recorded hash disagree.
+The temperature and power readings come from a small helper in `native/beacon-sensors.c`. `native/build.sh` builds it on an Apple silicon Mac and embeds it in `lib/mac-sensors-binary.ts` with its SHA-256. Beacon writes it to `~/Library/Caches/bb-plugin-beacon`, which only the user can write to, checks its owner, permissions and hash once per process, and runs it. If the file disappears, Beacon writes it again. Rebuild it whenever the C source changes; a test fails if the embedded helper and its recorded hash disagree.
 
 ## What the numbers mean
 
-CPU percent is the change between samples. The first sample has no percent. Per-core values follow the same rule.
+CPU percent is the change between samples. A cold start takes a 300 ms baseline first, so the first reading has a percent. Per-core values follow the same rule.
 
 Load averages are 1, 5, and 15 minutes. They are not CPU percents.
 
-Memory used is total minus available. On Linux, available is `MemAvailable`. Cache includes `Cached` and `SReclaimable`. Cache and buffers are supporting counters, not extra used memory.
+Memory used is total minus available. On Linux, available is `MemAvailable`. On macOS, used matches Activity Monitor's Memory Used: app memory (anonymous pages less purgeable) plus wired and compressed memory, from `vm_stat`. Cache includes `Cached` and `SReclaimable`. Cache and buffers are supporting counters, not extra used memory.
 
 Swap appears only when a swap total greater than zero is readable. Beacon never creates it.
 
 Disk is `/`. Used space is allocated blocks. Available excludes reserved blocks, so used plus available may not equal total.
 
-Network is received and sent bytes per second on the non-loopback interface with the most cumulative traffic. Not a sum of interfaces. Rates go unavailable when the interface changes or counters reset. Linux reads `/proc/net/dev`, macOS `netstat -ibn` and WSL Windows' `netstat.exe -e`.
+Network is received and sent bytes per second on the non-loopback interface with the most cumulative traffic. Not a sum of interfaces. Rates go unavailable when the interface changes or counters reset. Windows' counters are 32-bit, so Beacon allows for them wrapping. Linux reads `/proc/net/dev`, macOS `netstat -ibn` and WSL Windows' `netstat.exe -e`.
 
-Snapshots list six PIDs by lifetime-average CPU, PID as tie-break. The popover shows the first three. Process CPU is relative to one core and can exceed 100%. That is not the sampled host CPU.
+Snapshots list six PIDs by lifetime-average CPU, PID as tie-break. The popover shows the first five. Process CPU is relative to one core and can exceed 100%. That is not the sampled host CPU.
 
 Runtime is the BB server process, including loaded plugins, not Beacon alone.
 

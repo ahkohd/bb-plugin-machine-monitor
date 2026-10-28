@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { basename } from "node:path";
-import plugin, { calculateCpuUsage, calculateNetworkRates, parseProcesses, parseVmStatAvailableBytes } from "../server.ts";
+import plugin, { calculateCpuUsage, calculateNetworkRates, parseProcesses, parseVmStatUsedBytes } from "../server.ts";
 
 test("CPU deltas handle warmup, idle, full utilization, and counter resets", () => {
   assert.equal(calculateCpuUsage(null, { idle: 0, total: 100 }), null);
@@ -29,6 +29,9 @@ test("network rates use actual elapsed time and reject warmup, resets and interf
   const current = { interface: "eth0", rxBytes: 110, txBytes: 230 };
   assert.deepEqual(calculateNetworkRates(previous, current, 5), { rxBytesPerSecond: 2, txBytesPerSecond: 6 });
   assert.deepEqual(calculateNetworkRates(previous, previous, 5), { rxBytesPerSecond: 0, txBytesPerSecond: 0 });
+  const windowsBefore = { interface: "Windows", rxBytes: 2 ** 32 - 100, txBytes: 50, wrapsAt: 2 ** 32 };
+  const windowsAfter = { ...windowsBefore, rxBytes: 400, txBytes: 550 };
+  assert.deepEqual(calculateNetworkRates(windowsBefore, windowsAfter, 5), { rxBytesPerSecond: 100, txBytesPerSecond: 100 }, "32-bit Windows counters wrap instead of resetting");
   for (const [prior, next, elapsed] of [[null, current, 5], [previous, current, null], [previous, current, 0], [previous, current, -5], [previous, current, NaN], [previous, { ...current, rxBytes: 1 }, 5], [previous, { ...current, txBytes: 1 }, 5], [previous, { ...current, interface: "eth1" }, 5]]) {
     assert.deepEqual(calculateNetworkRates(prior, next, elapsed), { rxBytesPerSecond: null, txBytesPerSecond: null });
   }
@@ -49,7 +52,7 @@ test("bounded history expires on idle, not just reload, and no cold-start deltas
   t.mock.timers.tick(15_000);
   const resumed = await harness.behavior.callRpc("metrics_snapshot", null);
   assert.equal(resumed.history.length, 1);
-  assert.ok(resumed.cpu.usagePercent >= 0 && resumed.cpu.usagePercent <= 100, "a fresh baseline measures CPU on the first reading");
+  assert.equal(typeof resumed.cpu.usagePercent, "number", "a fresh baseline measures CPU on the first reading");
 });
 
 test("settings changes reach clients even while the previous snapshot is cached", async (t) => {
@@ -77,7 +80,7 @@ test("reload clears old history and does not introduce duplicate services or sig
   t.after(() => replacement.harness.lifecycle.dispose());
   await assert.rejects(harness.behavior.callRpc("metrics_snapshot", null), /disposed|stale/i);
   const next = await replacement.harness.behavior.callRpc("metrics_snapshot", null);
-  assert.equal(next.history.length, 1); assert.ok(next.cpu.usagePercent >= 0, "CPU is measured on the first reading after reload");
+  assert.equal(next.history.length, 1); assert.equal(typeof next.cpu.usagePercent, "number", "CPU is measured on the first reading after reload");
   assert.equal(replacement.harness.registrations.services.length, 1); assert.equal(replacement.harness.realtimeSignals.length, 0);
 });
 test("real backend leaves monitoring off by default and concurrent RPC/CLI readers share a bounded snapshot", async (t) => {
@@ -90,7 +93,7 @@ test("real backend leaves monitoring off by default and concurrent RPC/CLI reade
   // callRpc validates and JSON-round-trips the result, then unwraps the envelope.
   const snapshot = results[0];
   assert.ok(results.every((r) => r.timestamp === snapshot.timestamp));
-  assert.equal(snapshot.history.length, 1); assert.ok(snapshot.cpu.usagePercent >= 0, "CPU is measured on the first reading");
+  assert.equal(snapshot.history.length, 1); assert.equal(typeof snapshot.cpu.usagePercent, "number", "CPU is measured on the first reading");
   assert.equal(snapshot.refreshIntervalMs, 5000); assert.ok(snapshot.processes.top.length <= 6);
   assert.equal(snapshot.memory.usedBytes + snapshot.memory.availableBytes, snapshot.memory.totalBytes);
   assert.ok(Buffer.byteLength(JSON.stringify(snapshot)) < 128 * 1024);
@@ -117,17 +120,16 @@ test("long macOS executable paths keep the executable's name", () => {
   assert.equal(result.top[0].name, "Helper (Renderer)");
 });
 
-test("macOS available memory counts reclaimable pages, not only free ones", () => {
+test("macOS used memory matches Activity Monitor: app memory without purgeable, plus wired and compressed", () => {
   const vmStat = [
     "Mach Virtual Memory Statistics: (page size of 16384 bytes)",
-    "Pages free:                               13474.",
-    "Pages active:                           1301626.",
-    "Pages inactive:                          996935.",
-    "Pages speculative:                       330217.",
-    "Pages throttled:                              0.",
-    "Pages wired down:                        251552.",
-    "Pages purgeable:                          35696.",
+    "Pages free:                                  3234357.",
+    "Pages inactive:                              2088625.",
+    "Pages wired down:                             747197.",
+    "Pages purgeable:                               92642.",
+    "Anonymous pages:                             3107237.",
+    "Pages occupied by compressor:                  83853.",
   ].join("\n");
-  assert.equal(parseVmStatAvailableBytes(vmStat), (13474 + 996935 + 330217 + 35696) * 16384);
-  assert.equal(parseVmStatAvailableBytes("not vm_stat output"), null);
+  assert.equal(parseVmStatUsedBytes(vmStat), (3107237 - 92642 + 747197 + 83853) * 16384);
+  assert.equal(parseVmStatUsedBytes("not vm_stat output"), null);
 });

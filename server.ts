@@ -20,7 +20,7 @@ export {
   calculateCpuUsage,
   calculateNetworkRates,
   parseNetstatLinks,
-  parseVmStatAvailableBytes,
+  parseVmStatUsedBytes,
   parseWindowsNetstat,
   parseProcesses,
 } from "./lib/collector.ts";
@@ -149,8 +149,14 @@ export default async function plugin(bb: BbPluginApi) {
       );
   };
 
-  const machineSnapshot = (hostId: string, force: boolean) =>
-    hostClient.call("machine_snapshot", { refreshIntervalMs, force }, { hostId });
+  const machineSnapshot = async (hostId: string, force: boolean) => {
+    try {
+      return await hostClient.call("machine_snapshot", { refreshIntervalMs, force }, { hostId });
+    } catch (error) {
+      bb.log.warn(`Machine snapshot failed for ${hostId}: ${error instanceof Error ? error.message.slice(0, 500) : String(error)}`);
+      throw error;
+    }
+  };
 
   bb.rpc.register(rpcContract, {
     metrics_snapshot: () => sample(),

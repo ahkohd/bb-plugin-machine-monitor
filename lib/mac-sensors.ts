@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmod, readFile, rename, writeFile } from "node:fs/promises";
-import { arch, platform, tmpdir } from "node:os";
+import { lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { arch, homedir, platform } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { MAC_SENSORS_BINARY, MAC_SENSORS_DIGEST } from "./mac-sensors-binary.ts";
@@ -48,7 +48,21 @@ export function parseGpuUtilization(source: string): number | null {
 
 let helperPath: Promise<string | null> | null = null;
 
+const HELPER_DIRECTORY = join(homedir(), "Library", "Caches", "bb-plugin-beacon");
+const WRITABLE_BY_OTHERS = 0o022;
+
+async function ownedAndPrivate(path: string, kind: "file" | "directory"): Promise<boolean> {
+  try {
+    const stats = await lstat(path);
+    const rightKind = kind === "file" ? stats.isFile() : stats.isDirectory();
+    return rightKind && stats.uid === process.getuid?.() && (stats.mode & WRITABLE_BY_OTHERS) === 0;
+  } catch {
+    return false;
+  }
+}
+
 async function holdsHelper(path: string): Promise<boolean> {
+  if (!(await ownedAndPrivate(path, "file"))) return false;
   try {
     const digest = createHash("sha256").update(await readFile(path)).digest("hex");
     return digest === MAC_SENSORS_DIGEST;
@@ -58,17 +72,24 @@ async function holdsHelper(path: string): Promise<boolean> {
 }
 
 async function writeHelper(): Promise<string | null> {
-  const path = join(tmpdir(), `beacon-sensors-${MAC_SENSORS_DIGEST.slice(0, 16)}`);
+  await mkdir(HELPER_DIRECTORY, { recursive: true, mode: 0o700 }).catch(() => undefined);
+  if (!(await ownedAndPrivate(HELPER_DIRECTORY, "directory"))) return null;
+  const path = join(HELPER_DIRECTORY, `beacon-sensors-${MAC_SENSORS_DIGEST.slice(0, 16)}`);
   if (await holdsHelper(path)) return path;
+  const partial = `${path}.${process.pid}.${Date.now()}.partial`;
   try {
-    const partial = `${path}.${process.pid}.partial`;
-    await writeFile(partial, Buffer.from(MAC_SENSORS_BINARY, "base64"), { mode: 0o755 });
-    await chmod(partial, 0o755);
+    await writeFile(partial, Buffer.from(MAC_SENSORS_BINARY, "base64"), { mode: 0o700, flag: "wx" });
     await rename(partial, path);
     return (await holdsHelper(path)) ? path : null;
   } catch {
+    await rm(partial, { force: true });
     return null;
   }
+}
+
+function helperWentMissing(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | null)?.code;
+  return code === "ENOENT" || code === "EACCES";
 }
 
 async function readHelper(signal: AbortSignal) {
@@ -81,7 +102,8 @@ async function readHelper(signal: AbortSignal) {
   try {
     const { stdout } = await execFileAsync(path, [], { timeout: 3000, maxBuffer: 64 * 1024, signal });
     return parseSensorOutput(stdout);
-  } catch {
+  } catch (error) {
+    if (helperWentMissing(error)) helperPath = null;
     return null;
   }
 }
