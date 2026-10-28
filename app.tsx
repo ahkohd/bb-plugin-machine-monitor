@@ -5,6 +5,8 @@ import { SERVER_MACHINE, useServerSnapshot } from "./hooks/use-server-snapshot";
 import { machineKey, useMachines } from "./hooks/use-machines";
 import { PressureNotifications, bindStatusOpener } from "./components/pressure-notifications";
 import { MachinePicker } from "./components/machine-picker";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { ServerIcon } from "@hugeicons/core-free-icons";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -214,6 +216,10 @@ function MachineHeader({ machines, selected, onSelect, actions }: { machines: Ma
   );
 }
 
+function ServerMark({ className }: { className?: string }) {
+  return <HugeiconsIcon icon={ServerIcon} className={className} aria-hidden="true" />;
+}
+
 function StatusDisclosure({ dismiss }: ExperimentalSidebarFooterDisclosureProps) {
   const { machines, selected, setSelected } = useMachines();
   const { container, active, snapshot, error, reload, reloading } = useServerSnapshot(selected);
@@ -240,12 +246,13 @@ function StatusDisclosure({ dismiss }: ExperimentalSidebarFooterDisclosureProps)
 }
 
 export default definePluginApp((app) => {
+  app.experimental_icons.register({ name: "Server", component: ServerMark });
   app.slots.experimental_appOverlay({ id: "pressure-notifications", component: PressureNotifications });
   bindStatusOpener(app.experimental_sidebarFooter.register({
     kind: "disclosure",
     id: "status",
     label: "Machine status",
-    icon: "Laptop",
+    icon: "Server",
     component: StatusDisclosure,
   }).open);
 });
