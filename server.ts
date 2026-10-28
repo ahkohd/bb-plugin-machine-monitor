@@ -113,8 +113,20 @@ export default async function plugin(bb: BbPluginApi) {
 
   const hostClient = bb.hosts.experimental_client({ contract: hostContract });
 
-  const primaryHostId = async (): Promise<string | null> =>
-    (await bb.sdk.system.config()).primaryHostId ?? null;
+  let serverHostId: Promise<string | null> | null = null;
+  const primaryHostId = (): Promise<string | null> => {
+    serverHostId ??= bb.sdk.system.config().then(
+      (config) => {
+        if (!config.primaryHostId) serverHostId = null;
+        return config.primaryHostId ?? null;
+      },
+      (error: unknown) => {
+        serverHostId = null;
+        throw error;
+      },
+    );
+    return serverHostId;
+  };
 
   const listMachines = async (): Promise<Machine[]> => {
     const [hosts, serverHostId] = await Promise.all([
