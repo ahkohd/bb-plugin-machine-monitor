@@ -64,6 +64,12 @@ export const snapshotSchema = z.object({
     rxTotalBytes: z.number(),
     txTotalBytes: z.number(),
   }).nullable(),
+  tailscale: z.object({
+    dnsName: z.string().max(255),
+    ipv4: z.string().max(64).nullable(),
+    ipv6: z.string().max(64).nullable(),
+    tags: z.array(z.string().max(128)).max(16),
+  }).nullable().optional(),
   processes: z.object({
     available: z.boolean(),
     total: z.number().int().nonnegative(),

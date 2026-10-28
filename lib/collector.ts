@@ -4,6 +4,7 @@ import { arch, cpus, freemem, hostname, loadavg, platform, release, totalmem, up
 import { promisify } from "node:util";
 import { basename } from "node:path";
 import type { MetricPoint, Processes, ServerSnapshot } from "../contract.ts";
+import { createTailscaleReader } from "./tailscale.ts";
 
 const ROOT_MOUNT = "/";
 const HISTORY_LIMIT = 72;
@@ -221,6 +222,7 @@ function assessHealth(
 }
 
 export function createCollector(refreshIntervalMs: () => number) {
+  const readTailscale = createTailscaleReader();
   let previousCpuTimes: CpuTimes | null = null;
   let previousPerCoreTimes: CpuTimes[] | null = null;
   let previousNetworkTotals: NetworkTotals | null = null;
@@ -239,8 +241,8 @@ export function createCollector(refreshIntervalMs: () => number) {
     previousCpuTimes = cpuTimes;
     previousPerCoreTimes = perCoreTimes;
 
-    const [memoryDetails, disk, networkReading, processes] = await Promise.all([
-      readMemoryDetails(signal), readDisk(), readNetworkTotals(signal).then((totals) => ({ totals, time: performance.now() })), readProcesses(signal),
+    const [memoryDetails, disk, networkReading, processes, tailscale] = await Promise.all([
+      readMemoryDetails(signal), readDisk(), readNetworkTotals(signal).then((totals) => ({ totals, time: performance.now() })), readProcesses(signal), readTailscale(signal),
     ]);
     signal.throwIfAborted();
     const totalBytes = totalmem();
@@ -297,6 +299,7 @@ export function createCollector(refreshIntervalMs: () => number) {
       },
       disk,
       network,
+      tailscale,
       processes,
       runtime: {
         pid: process.pid,

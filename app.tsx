@@ -5,6 +5,7 @@ import { SERVER_MACHINE, useServerSnapshot } from "./hooks/use-server-snapshot";
 import { machineKey, useMachines } from "./hooks/use-machines";
 import { PressureNotifications, bindStatusOpener } from "./components/pressure-notifications";
 import { MachinePicker } from "./components/machine-picker";
+import { TailscaleRows } from "./components/tailscale-section";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ServerIcon } from "@hugeicons/core-free-icons";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -176,6 +177,11 @@ function StatusPopover({ snapshot, isServer }: { snapshot: ServerSnapshot; isSer
           <Row label="Upload" value={formatRate(network.txBytesPerSecond)} />
         </> : null}
       </Section>
+      {snapshot.tailscale ? (
+        <Section label="Tailscale">
+          <TailscaleRows tailscale={snapshot.tailscale} />
+        </Section>
+      ) : null}
       <Section label="Top processes" value={processes.available ? `${processes.total} total` : "Unavailable"}>
         {processes.top.slice(0, 3).map((process) => (
           <Row key={process.pid} label={process.name} value={formatBytes(process.rssBytes)} title={`PID ${process.pid} · ${process.cpuPercent.toFixed(1)}% CPU average · ${formatBytes(process.rssBytes)} memory`} />
