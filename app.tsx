@@ -4,7 +4,6 @@ import type { Machine, ServerSnapshot } from "./server";
 import { SERVER_MACHINE, useServerSnapshot } from "./hooks/use-server-snapshot";
 import { machineKey, useMachines } from "./hooks/use-machines";
 import { PressureNotifications, bindStatusOpener } from "./components/pressure-notifications";
-import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -101,27 +100,29 @@ function Row({ label, value, title }: { label: string; value: ReactNode; title?:
   );
 }
 
+const HEADER_BUTTON_CLASS = "flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring disabled:opacity-50";
+
 function ReloadButton({ onReload, reloading }: { onReload: () => void; reloading: boolean }) {
   return (
-    <Button
-      variant="ghost"
-      size="icon"
-      className="size-8"
-      aria-label="Reload machine status"
-      aria-busy={reloading}
-      disabled={reloading}
-      onClick={onReload}
-    >
+    <button type="button" className={HEADER_BUTTON_CLASS} aria-label="Reload machine status" aria-busy={reloading} disabled={reloading} onClick={onReload}>
       <Icon
-        name={reloading ? "Loading" : "ArrowReloadHorizontal"}
-        className={reloading ? "size-4 animate-spin motion-reduce:animate-none" : "size-4"}
+        name={reloading ? "Loading" : "RotateCcw"}
+        className={reloading ? "size-3.5 animate-spin motion-reduce:animate-none" : "size-3.5"}
         aria-hidden
       />
-    </Button>
+    </button>
   );
 }
 
-function StatusPopover({ snapshot, onReload, reloading, isServer }: { snapshot: ServerSnapshot; onReload: () => void; reloading: boolean; isServer: boolean }) {
+function CollapseButton({ onCollapse }: { onCollapse: () => void }) {
+  return (
+    <button type="button" className={HEADER_BUTTON_CLASS} aria-label="Hide machine status" onClick={onCollapse}>
+      <Icon name="ChevronDown" className="size-3.5" aria-hidden />
+    </button>
+  );
+}
+
+function StatusPopover({ snapshot, isServer }: { snapshot: ServerSnapshot; isServer: boolean }) {
   const { cpu, memory, disk, network, processes, runtime, host, history } = snapshot;
   return (
     <>
@@ -162,7 +163,7 @@ function StatusPopover({ snapshot, onReload, reloading, isServer }: { snapshot: 
         <Row label={isServer ? "Server" : "Machine"} value={formatDuration(host.uptimeSeconds)} />
         {isServer ? <Row label="bb" value={formatDuration(runtime.processUptimeSeconds)} /> : null}
       </Section>
-      <Section ariaLabel="Snapshot update" label={<time dateTime={snapshot.timestamp}>{formatUpdatedAt(snapshot.timestamp)}</time>} value={<ReloadButton onReload={onReload} reloading={reloading} />} />
+      <Section ariaLabel="Snapshot update" label={<time dateTime={snapshot.timestamp}>{formatUpdatedAt(snapshot.timestamp)}</time>} />
     </>
   );
 }
@@ -176,7 +177,7 @@ function LoadingPopover() {
       {LOADING_SECTIONS.map(([label, height]) => (
         <Section key={label} label={label}><Skeleton className={`${height} w-full`} /></Section>
       ))}
-      <Section label={<Skeleton className="h-3 w-24" />} value={<Skeleton className="size-8 rounded-md" />} />
+      <Section label={<Skeleton className="h-3 w-24" />} />
     </>
   );
 }
@@ -186,13 +187,13 @@ const MACHINE_GROUPS: { label: string; includes: (machine: Machine) => boolean }
   { label: "Boxes", includes: (machine) => machine.isBox },
 ];
 
-function MachinePicker({ machines, selected, onSelect }: { machines: Machine[] | null; selected: string; onSelect: (machineId: string) => void }) {
+function MachinePicker({ machines, selected, onSelect, trailing }: { machines: Machine[] | null; selected: string; onSelect: (machineId: string) => void; trailing: ReactNode }) {
   const options = machines ?? [];
   const known = options.some((machine) => machineKey(machine) === selected);
   return (
-    <div className="p-2">
+    <div className="sticky top-0 z-10 flex h-9 min-w-0 items-center gap-1 bg-sidebar px-1.5">
       <Select value={selected} onValueChange={onSelect} disabled={machines === null}>
-        <SelectTrigger aria-label="Machine" className="h-7 w-full justify-between border-sidebar-border bg-transparent px-2 text-xs font-medium text-sidebar-foreground hover:bg-sidebar-accent focus:ring-0">
+        <SelectTrigger aria-label="Machine" className="h-6 w-fit min-w-0 max-w-full shrink justify-start gap-1 border-none bg-transparent px-1.5 text-xs font-medium text-sidebar-foreground shadow-none hover:bg-sidebar-accent focus:ring-0 focus-visible:ring-2 focus-visible:ring-sidebar-ring [&>svg]:size-3.5">
           <SelectValue placeholder="This bb server" />
         </SelectTrigger>
         <SelectContent>
@@ -214,19 +215,29 @@ function MachinePicker({ machines, selected, onSelect }: { machines: Machine[] |
           })}
         </SelectContent>
       </Select>
+      <span className="flex-1" />
+      {trailing}
     </div>
   );
 }
 
-function StatusDisclosure(_props: ExperimentalSidebarFooterDisclosureProps) {
+function StatusDisclosure({ dismiss }: ExperimentalSidebarFooterDisclosureProps) {
   const { machines, selected, setSelected } = useMachines();
   const { container, active, snapshot, error, reload, reloading } = useServerSnapshot(selected);
   return (
     <div ref={container} data-beacon-shell aria-busy={(active && !snapshot && !error) || reloading} className="w-full min-w-0 divide-y divide-sidebar-border">
-      <MachinePicker machines={machines} selected={selected} onSelect={setSelected} />
+      <MachinePicker
+        machines={machines}
+        selected={selected}
+        onSelect={setSelected}
+        trailing={<>
+          <ReloadButton onReload={reload} reloading={reloading} />
+          <CollapseButton onCollapse={dismiss} />
+        </>}
+      />
       {error ? <div role="alert" className="px-3 py-2 text-xs text-destructive">Could not refresh: {error}</div> : null}
       {/* The skeleton gives the shell height so the visibility observer can activate polling. */}
-      {snapshot ? <StatusPopover snapshot={snapshot} onReload={reload} reloading={reloading} isServer={selected === SERVER_MACHINE} /> : (
+      {snapshot ? <StatusPopover snapshot={snapshot} isServer={selected === SERVER_MACHINE} /> : (
         error ? <div className="p-3 text-xs text-muted-foreground">Machine data unavailable. Retrying while visible.</div> : <LoadingPopover />
       )}
     </div>
