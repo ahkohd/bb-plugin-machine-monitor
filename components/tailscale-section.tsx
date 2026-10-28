@@ -129,10 +129,10 @@ function AddressRow({ ipv4, ipv6 }: { ipv4: string | null; ipv6: string | null }
   const { version, toggle } = useIpVersion();
   if (ipv4 && ipv6) {
     const value = version === "IPv6" ? ipv6 : ipv4;
-    return <CopyValue key={version} label={version} value={value} labelControl={<IpVersionToggle version={version} onToggle={toggle} />} />;
+    return <CopyValue key={version} label={version} value={value} title={version === "IPv6" ? `Copy ${ipv6}` : undefined} labelControl={<IpVersionToggle version={version} onToggle={toggle} />} />;
   }
   if (ipv4) return <CopyValue label="IPv4" value={ipv4} />;
-  return ipv6 ? <CopyValue label="IPv6" value={ipv6} /> : null;
+  return ipv6 ? <CopyValue label="IPv6" value={ipv6} title={`Copy ${ipv6}`} /> : null;
 }
 
 export function TailscaleRows({ tailscale }: { tailscale: TailscaleInfo }) {
