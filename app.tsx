@@ -391,7 +391,7 @@ function ProcessesSection({ snapshot }: { snapshot: ServerSnapshot }) {
               <TooltipContent side="right" className="text-xs">{process.name} · PID {process.pid}</TooltipContent>
             </Tooltip>
             <span className="text-right tabular-nums text-subtle-foreground" style={{ color: shareColor(memory.totalBytes > 0 ? process.rssBytes / memory.totalBytes : 0, 0.25, 0.5) }}>{formatBytes(process.rssBytes)}</span>
-            <span className="text-right tabular-nums text-sidebar-foreground" style={{ color: shareColor(process.cpuPercent, 50, 100) }}>{process.cpuPercent.toFixed(1)}</span>
+            <span className="text-right tabular-nums text-subtle-foreground" style={{ color: shareColor(process.cpuPercent, 50, 100) }}>{process.cpuPercent.toFixed(1)}</span>
           </div>
         )) : <span className="col-span-3 text-muted-foreground">Unavailable</span>}
       </div>
