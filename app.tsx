@@ -191,7 +191,6 @@ function StatusPopover({ snapshot, isServer }: { snapshot: ServerSnapshot; isSer
         <Row label={isServer ? "Server" : "Machine"} value={formatDuration(host.uptimeSeconds)} />
         {isServer ? <Row label="bb" value={formatDuration(runtime.processUptimeSeconds)} /> : null}
       </Section>
-      <Section ariaLabel="Snapshot update" label={<time dateTime={snapshot.timestamp}>{formatUpdatedAt(snapshot.timestamp)}</time>} />
     </>
   );
 }
@@ -205,7 +204,6 @@ function LoadingPopover() {
       {LOADING_SECTIONS.map(([label, height]) => (
         <Section key={label} label={label}><Skeleton className={`${height} w-full`} /></Section>
       ))}
-      <Section label={<Skeleton className="h-3 w-24" />} />
     </>
   );
 }
