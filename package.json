@@ -1,11 +1,11 @@
 {
-  "name": "bb-plugin-machine-status",
-  "version": "0.1.2",
+  "name": "bb-plugin-machine-monitor",
+  "version": "0.2.0",
   "type": "module",
   "description": "See CPU, GPU, memory, disk, network, battery, Tailscale and top processes for any of your bb machines from the sidebar.",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ahkohd/bb-plugin-machine-status.git"
+    "url": "https://github.com/ahkohd/bb-plugin-machine-monitor.git"
   },
   "scripts": {
     "test": "node --test tests/*.test.mjs",
@@ -17,7 +17,7 @@
     "bbPluginSdk": ">=0.6.49"
   },
   "bb": {
-    "name": "Machine status",
+    "name": "Machine Monitor",
     "description": "See CPU, GPU, memory, disk, network, battery, Tailscale and top processes for any of your bb machines from the sidebar.",
     "branding": {
       "icon": "./assets/icon.svg"

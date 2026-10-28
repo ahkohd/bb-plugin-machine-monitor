@@ -559,7 +559,7 @@ function StatusDisclosure({ dismiss }: ExperimentalSidebarFooterDisclosureProps)
   }, [selected, loadedGpu, loadedBattery, loadedTailscaleRows]);
   return (
     <TooltipProvider>
-    <div ref={container} data-machine-status-shell aria-busy={(active && !snapshot && !error) || reloading} className="w-full min-w-0 divide-y divide-sidebar-border">
+    <div ref={container} data-machine-monitor-shell aria-busy={(active && !snapshot && !error) || reloading} className="w-full min-w-0 divide-y divide-sidebar-border">
       <MachineHeader
         machines={machines}
         selected={selected}

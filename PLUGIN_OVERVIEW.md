@@ -1,8 +1,8 @@
 ## What you get
 
-Machine status lives in the sidebar footer. Pick any of your bb machines, including the bb server and BB Box boxes, and see its CPU, GPU, memory, free space, network, battery, Tailscale details and top processes. Apple silicon Macs also show CPU and GPU temperature and power. Hover a section for more detail. The panel reads data only while it is open.
+Machine Monitor adds a Machine status panel to the sidebar footer. Pick any of your bb machines, including the bb server and BB Box boxes, and see its CPU, GPU, memory, free space, network, battery, Tailscale details and top processes. Apple silicon Macs also show CPU and GPU temperature and power. Hover a section for more detail. The panel reads data only while it is open.
 
-`bb machine-status snapshot` prints the bb server's numbers in a terminal. `bb machine-status health` reports pressure and exits 2 when a reading is critical.
+`bb machine-monitor snapshot` prints the bb server's numbers in a terminal. `bb machine-monitor health` reports pressure and exits 2 when a reading is critical.
 
 Turn on background monitoring to check the bb server's CPU and memory every 30 seconds while the panel is closed. Sustained overload shows an in-app alert while bb is open and visible.
 

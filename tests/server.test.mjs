@@ -37,7 +37,7 @@ test("network rates use actual elapsed time and reject warmup, resets and interf
 test("bounded history expires on idle, not just reload, and no cold-start deltas bridge the gap", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: 1_789_000_000_000 });
   t.mock.method(performance, "now", () => Date.now());
-  const { bb, harness } = createFakePluginHost({ pluginId: "machine-status" });
+  const { bb, harness } = createFakePluginHost({ pluginId: "machine-monitor" });
   t.after(() => harness.lifecycle.dispose()); await plugin(bb);
   let snapshot;
   for (let i = 0; i < 80; i++) {
@@ -53,7 +53,7 @@ test("bounded history expires on idle, not just reload, and no cold-start deltas
 });
 
 test("settings changes reach clients even while the previous snapshot is cached", async (t) => {
-  const { bb, harness } = createFakePluginHost({ pluginId: "machine-status" });
+  const { bb, harness } = createFakePluginHost({ pluginId: "machine-monitor" });
   t.after(() => harness.lifecycle.dispose()); await plugin(bb);
   const initial = await harness.behavior.callRpc("metrics_snapshot", null);
   await harness.behavior.setSettings({ refreshIntervalSeconds: 60 });
@@ -62,7 +62,7 @@ test("settings changes reach clients even while the previous snapshot is cached"
 });
 
 test("manual refresh bypasses the shared snapshot cache", async (t) => {
-  const { bb, harness } = createFakePluginHost({ pluginId: "machine-status" });
+  const { bb, harness } = createFakePluginHost({ pluginId: "machine-monitor" });
   t.after(() => harness.lifecycle.dispose()); await plugin(bb);
   const initial = await harness.behavior.callRpc("metrics_snapshot", null);
   const refreshed = await harness.behavior.callRpc("metrics_refresh", null);
@@ -70,7 +70,7 @@ test("manual refresh bypasses the shared snapshot cache", async (t) => {
 });
 
 test("reload clears old history and does not introduce duplicate services or signals", async (t) => {
-  const { bb, harness } = createFakePluginHost({ pluginId: "machine-status" });
+  const { bb, harness } = createFakePluginHost({ pluginId: "machine-monitor" });
   t.after(() => harness.lifecycle.dispose()); await plugin(bb);
   await harness.behavior.callRpc("metrics_snapshot", null);
   const replacement = await harness.lifecycle.reload(plugin);
@@ -81,7 +81,7 @@ test("reload clears old history and does not introduce duplicate services or sig
   assert.equal(replacement.harness.registrations.services.length, 1); assert.equal(replacement.harness.realtimeSignals.length, 0);
 });
 test("real backend leaves monitoring off by default and concurrent RPC/CLI readers share a bounded snapshot", async (t) => {
-  const { bb, harness } = createFakePluginHost({ pluginId: "machine-status" });
+  const { bb, harness } = createFakePluginHost({ pluginId: "machine-monitor" });
   t.after(() => harness.lifecycle.dispose()); await plugin(bb);
   assert.equal(harness.registrations.services.length, 1);
   assert.equal((await harness.behavior.callRpc("monitor_status", null)).enabled, false);
@@ -99,7 +99,7 @@ test("real backend leaves monitoring off by default and concurrent RPC/CLI reade
   assert.equal(harness.realtimeSignals.length, 0);
 });
 test("invalid CLI input does not sample, and settings retain enforced bounds", async (t) => {
-  const { bb, harness } = createFakePluginHost({ pluginId: "machine-status" });
+  const { bb, harness } = createFakePluginHost({ pluginId: "machine-monitor" });
   t.after(() => harness.lifecycle.dispose()); await plugin(bb);
   assert.equal((await harness.behavior.runCli(["nope"])).exitCode, 1);
   assert.equal((await harness.behavior.runCli(["snapshot", "junk"])).exitCode, 1);

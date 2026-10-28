@@ -114,7 +114,7 @@ async function fakeHelper(t, body) {
   const { mkdtemp, writeFile, rm } = await import("node:fs/promises");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
-  const directory = await mkdtemp(join(tmpdir(), "machine-status-fake-helper-"));
+  const directory = await mkdtemp(join(tmpdir(), "machine-monitor-fake-helper-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const path = join(directory, "helper");
   await writeFile(path, `#!/bin/sh\n${body}\n`, { mode: 0o755 });

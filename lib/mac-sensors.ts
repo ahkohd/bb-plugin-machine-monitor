@@ -40,7 +40,7 @@ export function parseSensorOutput(source: string): MacSensors | null {
 
 let helperPath: Promise<string | null> | null = null;
 
-const HELPER_DIRECTORY = join(homedir(), "Library", "Caches", "bb-plugin-machine-status");
+const HELPER_DIRECTORY = join(homedir(), "Library", "Caches", "bb-plugin-machine-monitor");
 const WRITABLE_BY_OTHERS = 0o022;
 
 async function ownedAndPrivate(path: string, kind: "file" | "directory"): Promise<boolean> {

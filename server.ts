@@ -167,15 +167,15 @@ export default async function plugin(bb: BbPluginApi) {
     monitor_status: () => monitor.status(),
   });
 
-  const usage = ["Usage:", "  bb machine-status snapshot [--json]", "  bb machine-status health [--json]", "  bb machine-status logs [--json] [--limit 1..500]", "  bb machine-status test-alert"].join("\n");
+  const usage = ["Usage:", "  bb machine-monitor snapshot [--json]", "  bb machine-monitor health [--json]", "  bb machine-monitor logs [--json] [--limit 1..500]", "  bb machine-monitor test-alert"].join("\n");
   bb.cli.register({
-    name: "machine-status",
+    name: "machine-monitor",
     summary: "Inspect BB server resource usage and health",
     commands: [
-      { name: "snapshot", summary: "Show current server statistics", usage: "bb machine-status snapshot [--json]" },
-      { name: "health", summary: "Show the current pressure assessment", usage: "bb machine-status health [--json]" },
-      { name: "logs", summary: "Read bounded monitoring history; --json exports JSONL", usage: "bb machine-status logs [--json] [--limit 1..500]" },
-      { name: "test-alert", summary: "Send a labeled in-app alert preview to visible BB clients", usage: "bb machine-status test-alert" },
+      { name: "snapshot", summary: "Show current server statistics", usage: "bb machine-monitor snapshot [--json]" },
+      { name: "health", summary: "Show the current pressure assessment", usage: "bb machine-monitor health [--json]" },
+      { name: "logs", summary: "Read bounded monitoring history; --json exports JSONL", usage: "bb machine-monitor logs [--json] [--limit 1..500]" },
+      { name: "test-alert", summary: "Send a labeled in-app alert preview to visible BB clients", usage: "bb machine-monitor test-alert" },
     ],
     async run(argv) {
       if (argv[0] === "test-alert") {
@@ -230,6 +230,6 @@ export default async function plugin(bb: BbPluginApi) {
     },
   });
 
-  bb.log.info("Machine status loaded");
-  bb.onDispose(() => { monitor.dispose(); sampler.dispose(); stopMacSensors(); bb.log.info("Machine status disposed"); });
+  bb.log.info("Machine monitor loaded");
+  bb.onDispose(() => { monitor.dispose(); sampler.dispose(); stopMacSensors(); bb.log.info("Machine monitor disposed"); });
 }

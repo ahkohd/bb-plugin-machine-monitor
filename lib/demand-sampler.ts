@@ -26,7 +26,7 @@ export function createDemandSampler<T>(options: {
   }
 
   function sample(force = false): Promise<T> {
-    if (lifecycle.signal.aborted) return Promise.reject(new Error("Machine status has been disposed"));
+    if (lifecycle.signal.aborted) return Promise.reject(new Error("Machine monitor has been disposed"));
     if (pending) return pending;
     if (!force && cached !== null && now() - sampledAt < options.intervalMs()) {
       expireLater();

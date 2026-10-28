@@ -5,7 +5,7 @@ import Database from "better-sqlite3";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { createPressureMonitor } from "../lib/pressure-monitor.ts";
 
-const { bb, harness } = createFakePluginHost({ pluginId: "machine-status" });
+const { bb, harness } = createFakePluginHost({ pluginId: "machine-monitor" });
 const db = bb.storage.database();
 db.pragma("journal_mode = WAL");
 const original = db.transaction.bind(db);

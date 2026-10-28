@@ -1,4 +1,4 @@
-# Machine status
+# Machine Monitor
 
 See CPU, GPU, memory, disk, network, battery, Tailscale and top processes for any of your bb machines, from the bb sidebar footer.
 
@@ -7,7 +7,7 @@ Based on Beacon by [g4f4r0](https://github.com/g4f4r0/bb-plugins).
 <p>
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/panel-dark.png">
-    <img src="assets/screenshots/panel-light.png" alt="The Machine status panel for a Mac: summary, CPU, GPU, memory, free space, network, Tailscale and top processes" width="314">
+    <img src="assets/screenshots/panel-light.png" alt="The Machine Monitor panel for a Mac: summary, CPU, GPU, memory, free space, network, Tailscale and top processes" width="314">
   </picture>
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/picker-dark.png">
@@ -22,7 +22,7 @@ Based on Beacon by [g4f4r0](https://github.com/g4f4r0/bb-plugins).
 
 ## What it shows
 
-Open Machine status from the sidebar footer and pick a machine from the menu at the top. The bb server has a crown, your own machines a server icon and BB Box boxes the BB Box cube. The list searches as you type.
+Click Machine status in the sidebar footer and pick a machine from the menu at the top. The bb server has a crown, your own machines a server icon and BB Box boxes the BB Box cube. The list searches as you type.
 
 For the selected machine you see:
 
@@ -43,7 +43,7 @@ The panel only reads data while it is open and visible. It reads system counters
 ## Install
 
 ```sh
-bb plugin install git:https://github.com/ahkohd/bb-plugin-machine-status.git
+bb plugin install git:https://github.com/ahkohd/bb-plugin-machine-monitor.git
 ```
 
 Needs bb 0.46 and Plugin SDK 0.6.49 or newer. Each machine is read by the plugin's host entry, which bb runs on that machine. Linux, macOS and WSL are supported.
@@ -57,9 +57,9 @@ Needs bb 0.46 and Plugin SDK 0.6.49 or newer. Each machine is read by the plugin
 | `pressureNotifications` | `true` | Shows an in-app alert when background monitoring finds sustained high CPU or memory. |
 
 ```sh
-bb plugin config machine-status
-bb plugin config machine-status set refreshIntervalSeconds 10
-bb plugin config machine-status set backgroundMonitoring true
+bb plugin config machine-monitor
+bb plugin config machine-monitor set refreshIntervalSeconds 10
+bb plugin config machine-monitor set backgroundMonitoring true
 ```
 
 Settings apply without a reload.
@@ -70,10 +70,10 @@ These read the bb server only.
 
 | Command | Result |
 | --- | --- |
-| `bb machine-status snapshot` | CPU, load, memory, disk and process summary. Add `--json` for the full reading. |
-| `bb machine-status health` | Pressure assessment. Exits 2 if critical. With `--json` it always exits 0; read `status`. |
-| `bb machine-status logs` | The last 100 diagnostic records. `--limit 500 --json` gives up to 500 as JSONL. |
-| `bb machine-status test-alert` | Shows a labelled preview alert on open bb clients. Needs both monitoring settings on. |
+| `bb machine-monitor snapshot` | CPU, load, memory, disk and process summary. Add `--json` for the full reading. |
+| `bb machine-monitor health` | Pressure assessment. Exits 2 if critical. With `--json` it always exits 0; read `status`. |
+| `bb machine-monitor logs` | The last 100 diagnostic records. `--limit 500 --json` gives up to 500 as JSONL. |
+| `bb machine-monitor test-alert` | Shows a labelled preview alert on open bb clients. Needs both monitoring settings on. |
 
 ## Background alerts
 
@@ -108,7 +108,7 @@ Temperature, power and GPU usage on Apple silicon come from a small helper, `nat
 
 `native/build.sh` builds it on an Apple silicon Mac and embeds it in `lib/mac-sensors-binary.ts` with its SHA-256. Rebuild it whenever the C source changes. A test fails if the embedded helper and its hash disagree.
 
-The plugin writes the helper to `~/Library/Caches/bb-plugin-machine-status`, which only the user can write to. It checks the file's owner, permissions and hash, then starts it once. The helper keeps its sensor connections open and answers one reading for each line it gets on stdin, so a refresh starts no new process.
+The plugin writes the helper to `~/Library/Caches/bb-plugin-machine-monitor`, which only the user can write to. It checks the file's owner, permissions and hash, then starts it once. The helper keeps its sensor connections open and answers one reading for each line it gets on stdin, so a refresh starts no new process.
 
 - Power is averaged over the time since the previous reading. The first reading has none, and neither does a reading more than 65 seconds after the last one, for example after the Mac slept.
 - Counters that report no energy at all are shown as unavailable, not as 0 W. Some machines report CPU energy this way.
@@ -121,7 +121,7 @@ The plugin writes the helper to `~/Library/Caches/bb-plugin-machine-status`, whi
 npm test
 npm run typecheck
 bb plugin build
-bb plugin reload machine-status
+bb plugin reload machine-monitor
 ```
 
 Tests live in `tests/`. `tests/monitor.test.mjs` needs `better-sqlite3`'s native module, built for your Node version.
@@ -132,8 +132,8 @@ Tests live in `tests/`. `tests/monitor.test.mjs` needs `better-sqlite3`'s native
 
 **The panel says it is still waiting for a machine.** The machine has not answered yet. Just after a plugin update, bb can take about a minute to start the plugin on each machine.
 
-**The panel says it cannot reach a machine.** The last reading stays visible while the plugin keeps trying. Failed requests are logged in `bb plugin logs machine-status`.
+**The panel says it cannot reach a machine.** The last reading stays visible while the plugin keeps trying. Failed requests are logged in `bb plugin logs machine-monitor`.
 
 **No temperature or power on a Mac.** These need an Apple silicon Mac. Some machines report no CPU energy, so CPU power stays hidden there.
 
-**No alert appeared.** Check both monitoring settings and keep bb visible. Try `bb machine-status test-alert`. Real alerts also wait a minute to confirm and then pause for five minutes.
+**No alert appeared.** Check both monitoring settings and keep bb visible. Try `bb machine-monitor test-alert`. Real alerts also wait a minute to confirm and then pause for five minutes.

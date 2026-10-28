@@ -6,7 +6,7 @@ import { PRESSURE_CHANNEL } from "../lib/pressure";
 import { createAlertReceiver } from "../lib/alert-receiver";
 import { pressureAlertCopy, TEST_ALERT_COPY } from "../lib/alert-copy";
 
-const CURSOR_KEY = "machine-status-pressure-cursor-v2";
+const CURSOR_KEY = "machine-monitor-pressure-cursor-v2";
 let openStatus = () => {};
 export function bindStatusOpener(open: () => void) {
   openStatus = open;
@@ -23,7 +23,7 @@ function ActiveNotifications() {
     if (pageHidden.current || document.visibilityState !== "visible") return;
     if (value && typeof value === "object" && "type" in value && value.type === "test") {
       toast.warning(TEST_ALERT_COPY.title, {
-        id: "machine-status-pressure-test", description: TEST_ALERT_COPY.description,
+        id: "machine-monitor-pressure-test", description: TEST_ALERT_COPY.description,
         duration: 20_000, closeButton: true,
         action: { label: "Open Status", onClick: () => openStatus() },
       });
@@ -43,7 +43,7 @@ function ActiveNotifications() {
       const recovered = notice.type === "recovery";
       const { title, description } = pressureAlertCopy(notice);
       (recovered ? toast.success : toast.warning)(title, {
-        id: `machine-status-pressure-${notice.metric}`, description, duration: 12_000,
+        id: `machine-monitor-pressure-${notice.metric}`, description, duration: 12_000,
         action: { label: "Open Status", onClick: () => openStatus() },
       });
     }, (cursor) => { try { sessionStorage.setItem(CURSOR_KEY, JSON.stringify(cursor)); } catch { /* In-memory deduplication still applies. */ } });
@@ -79,9 +79,9 @@ function ActiveNotifications() {
       document.removeEventListener("visibilitychange", visible);
       window.removeEventListener("pagehide", hide);
       window.removeEventListener("pageshow", show);
-      toast.dismiss("machine-status-pressure-cpu");
-      toast.dismiss("machine-status-pressure-memory");
-      toast.dismiss("machine-status-pressure-test");
+      toast.dismiss("machine-monitor-pressure-cpu");
+      toast.dismiss("machine-monitor-pressure-memory");
+      toast.dismiss("machine-monitor-pressure-test");
     };
   }, [rpc]);
 

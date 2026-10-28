@@ -37,7 +37,7 @@ export function createPressureMonitor(bb: BbPluginApi, read: (signal: AbortSigna
     lastSummary = -Infinity;
     if (!enabled) {
       try { getStore().write([{ type: "monitor_disabled", timestamp: Date.now() }], freshPressureState()); }
-      catch { bb.log.warn("Machine status could not record that background monitoring was disabled."); }
+      catch { bb.log.warn("Machine monitor could not record that background monitoring was disabled."); }
     }
     wake?.();
   }
@@ -99,7 +99,7 @@ export function createPressureMonitor(bb: BbPluginApi, read: (signal: AbortSigna
           if (now - lastError >= 300_000) {
             lastError = now;
             records.push({ type: "error", timestamp: Date.now(), message: "Pressure sampling or log storage failed", errorType: cause instanceof Error ? cause.name.slice(0, 64) : "UnknownError" });
-            bb.log.warn("Machine status pressure monitor could not sample or store diagnostics; retrying in 30 seconds.");
+            bb.log.warn("Machine monitor pressure monitor could not sample or store diagnostics; retrying in 30 seconds.");
           }
           // Persist broken streaks even when the error log is throttled. Otherwise a
           // reload can restore an old candidate and falsely count the failed interval.

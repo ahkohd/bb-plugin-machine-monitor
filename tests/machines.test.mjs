@@ -16,7 +16,7 @@ const hosts = [
 
 async function startPlugin(t, callHostRpc) {
   const { bb, harness } = createFakePluginHost({
-    pluginId: "machine-status",
+    pluginId: "machine-monitor",
     sdk: {
       hosts: { list: async () => hosts },
       system: { config: async () => ({ primaryHostId: SERVER_HOST }) },
@@ -122,22 +122,23 @@ test("the remembered panel layout survives bad storage and clamps tailscale rows
     assert.deepEqual(readPanelShape("host_mac"), { gpu: false, battery: false, tailscaleRows: 0 });
     rememberPanelShape("host_mac", { gpu: true, battery: true, tailscaleRows: 3 });
     assert.deepEqual(readPanelShape("host_mac"), { gpu: true, battery: true, tailscaleRows: 3 });
-    store.set("machine-status:shape:host_box", JSON.stringify({ gpu: "yes", tailscaleRows: 40 }));
+    store.set("machine-monitor:shape:host_box", JSON.stringify({ gpu: "yes", tailscaleRows: 40 }));
     assert.deepEqual(readPanelShape("host_box"), { gpu: false, battery: false, tailscaleRows: 4 });
-    store.set("machine-status:shape:host_box", "{not json");
+    store.set("machine-monitor:shape:host_box", "{not json");
     assert.deepEqual(readPanelShape("host_box"), { gpu: false, battery: false, tailscaleRows: 0 });
   } finally {
     delete globalThis.localStorage;
   }
 });
 
-test("settings stored under the old Beacon names move to the new names once", async () => {
+test("settings stored under the Beacon and Machine status names move to the new names once", async () => {
   const { moveLegacyStorage } = await import("../lib/legacy-storage.ts");
   const store = new Map([
     ["beacon:machine", "host_mac"],
     ["beacon:ip-version", "IPv6"],
     ["beacon:shape:host_mac", '{"gpu":true}'],
-    ["machine-status:ip-version", "IPv4"],
+    ["machine-status:shape:host_box", '{"battery":false}'],
+    ["machine-monitor:ip-version", "IPv4"],
     ["other-plugin:key", "untouched"],
   ]);
   const storage = {
@@ -149,9 +150,10 @@ test("settings stored under the old Beacon names move to the new names once", as
   };
   moveLegacyStorage(storage);
   assert.deepEqual(Object.fromEntries(store), {
-    "machine-status:machine": "host_mac",
-    "machine-status:ip-version": "IPv4",
-    "machine-status:shape:host_mac": '{"gpu":true}',
+    "machine-monitor:machine": "host_mac",
+    "machine-monitor:ip-version": "IPv4",
+    "machine-monitor:shape:host_mac": '{"gpu":true}',
+    "machine-monitor:shape:host_box": '{"battery":false}',
     "other-plugin:key": "untouched",
   }, "old keys move, newer values win and other keys stay");
 });
