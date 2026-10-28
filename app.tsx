@@ -1,4 +1,4 @@
-import { useEffect, useMemo, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { definePluginApp, experimental_Icon as Icon, type ExperimentalSidebarFooterDisclosureProps } from "@get-bb/plugin-sdk/app";
 import type { Machine, ServerSnapshot } from "./server";
 import { SERVER_MACHINE, useServerSnapshot } from "./hooks/use-server-snapshot";
@@ -9,7 +9,7 @@ import { MachinePicker, selectedMachine } from "./components/machine-picker";
 import { loadErrorCopy } from "./lib/load-error-copy";
 import { LoadingTailscaleRows, TailscaleRows, tailscaleRowCount } from "./components/tailscale-section";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Alert02Icon, ArrowDataTransferVerticalIcon, BatteryChargingIcon, BatteryFullIcon, CloudOffIcon, CpuIcon, GpuIcon, HardDriveIcon, RamMemoryIcon, ServerIcon } from "@hugeicons/core-free-icons";
+import { Alert02Icon, ArrowDataTransferVerticalIcon, BatteryChargingIcon, BatteryFullIcon, Clock01Icon, CloudOffIcon, CpuIcon, GpuIcon, HardDriveIcon, RamMemoryIcon, ServerIcon } from "@hugeicons/core-free-icons";
 import { BarChart, BigValue, DetailRow, Footnote, LineChart, LoadingText, METRIC_COLORS, MetricSection, Pill, ProgressBar } from "./components/metric-parts";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { hasGpuReadings, readPanelShape, rememberPanelShape, type PanelShape } from "./lib/panel-shape";
@@ -96,14 +96,14 @@ function HeaderButton({ label, tooltip, onClick, disabled, busy, children }: { l
   );
 }
 
-function ReloadButton({ onReload, reloading, updatedAt }: { onReload: () => void; reloading: boolean; updatedAt: string | null }) {
+function ReloadButton({ onReload, reloading, loading, updatedAt }: { onReload: () => void; reloading: boolean; loading: boolean; updatedAt: string | null }) {
   return (
     <HeaderButton
       label="Reload machine status"
-      tooltip={reloading ? "Reloading" : updatedAt ? `${formatUpdatedAt(updatedAt)} · Reload` : "Reload"}
+      tooltip={reloading ? "Reloading" : loading ? "Loading" : updatedAt ? `${formatUpdatedAt(updatedAt)} · Reload` : "Reload"}
       onClick={onReload}
-      disabled={reloading}
-      busy={reloading}
+      disabled={reloading || loading}
+      busy={reloading || loading}
     >
       <Icon
         name={reloading ? "Loading" : "RotateCcw"}
@@ -177,11 +177,19 @@ const HEALTH_LABELS = {
   critical: { label: "Critical", tone: "bad", color: METRIC_COLORS.bad },
 } as const;
 
-function SummaryStrip({ snapshot, isServer }: { snapshot: ServerSnapshot | null; isServer: boolean }) {
+function SummaryStrip({ snapshot, isServer, waitingFor }: { snapshot: ServerSnapshot | null; isServer: boolean; waitingFor: string | null }) {
   if (!snapshot) {
     return (
-      <div className="flex flex-wrap items-center gap-1 px-3 py-2">
+      <div className="relative flex flex-wrap items-center gap-1 px-3 py-2">
         {["● Healthy", "macOS · arm64", "16 GB", "8 cores", "up 1d 2h", ...(isServer ? ["bb up 1h 2m"] : [])].map((sample) => <Pill key={sample} loading>{sample}</Pill>)}
+        {waitingFor ? (
+          <div role="status" className="absolute inset-0 flex items-center justify-center px-3">
+            <span className="flex items-center gap-1.5 rounded-md bg-sidebar px-2 py-1 text-xs text-subtle-foreground">
+              <HugeiconsIcon icon={Clock01Icon} className="size-3.5 shrink-0" aria-hidden="true" />
+              Still waiting for {waitingFor}
+            </span>
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -454,10 +462,10 @@ function ProcessesSection({ snapshot }: { snapshot: ServerSnapshot | null }) {
   );
 }
 
-function StatusPopover({ snapshot, isServer, expected }: { snapshot: ServerSnapshot | null; isServer: boolean; expected: PanelShape }) {
+function StatusPopover({ snapshot, isServer, expected, waitingFor }: { snapshot: ServerSnapshot | null; isServer: boolean; expected: PanelShape; waitingFor: string | null }) {
   return (
     <>
-      <SummaryStrip snapshot={snapshot} isServer={isServer} />
+      <SummaryStrip snapshot={snapshot} isServer={isServer} waitingFor={waitingFor} />
       <CpuSection snapshot={snapshot} />
       {snapshot || expected.gpu ? <GpuSection snapshot={snapshot} /> : null}
       <MemorySection snapshot={snapshot} />
@@ -514,6 +522,21 @@ function UnavailableState({ message }: { message: string }) {
   );
 }
 
+const SLOW_LOAD_MS = 6000;
+
+function useSlowLoad(machineId: string, loading: boolean): boolean {
+  const [slow, setSlow] = useState<string | null>(null);
+  useEffect(() => {
+    if (!loading) {
+      setSlow(null);
+      return;
+    }
+    const timer = setTimeout(() => setSlow(machineId), SLOW_LOAD_MS);
+    return () => clearTimeout(timer);
+  }, [machineId, loading]);
+  return loading && slow === machineId;
+}
+
 function ServerMark({ className }: { className?: string }) {
   return <HugeiconsIcon icon={ServerIcon} className={className} aria-hidden="true" />;
 }
@@ -521,7 +544,9 @@ function ServerMark({ className }: { className?: string }) {
 function StatusDisclosure({ dismiss }: ExperimentalSidebarFooterDisclosureProps) {
   const { machines, selected, setSelected, refresh: refreshMachines } = useMachines();
   const { container, active, snapshot, error, reload, reloading } = useServerSnapshot(selected);
-  const errorMessage = error ? loadErrorCopy(error, selectedMachine(machines, selected).name) : "";
+  const machineName = selectedMachine(machines, selected).name;
+  const errorMessage = error ? loadErrorCopy(error, machineName) : "";
+  const slowLoad = useSlowLoad(selected, !snapshot && !error);
   useRevealOnLoad(container, selected, snapshot !== null);
   const expectedShape = useMemo(() => readPanelShape(selected), [selected]);
   const loadedGpu = snapshot ? hasGpuReadings(snapshot) : null;
@@ -540,7 +565,7 @@ function StatusDisclosure({ dismiss }: ExperimentalSidebarFooterDisclosureProps)
         onSelect={setSelected}
         onOpen={() => void refreshMachines()}
         actions={<>
-          <ReloadButton onReload={reload} reloading={reloading || (!snapshot && !error)} updatedAt={snapshot?.timestamp ?? null} />
+          <ReloadButton onReload={reload} reloading={reloading} loading={!snapshot && !error} updatedAt={snapshot?.timestamp ?? null} />
           <CollapseButton onCollapse={dismiss} />
         </>}
       />
@@ -548,7 +573,7 @@ function StatusDisclosure({ dismiss }: ExperimentalSidebarFooterDisclosureProps)
       {/* The skeleton gives the shell height so the visibility observer can activate polling. */}
       {!snapshot && error
         ? <UnavailableState message={errorMessage} />
-        : <StatusPopover snapshot={snapshot} isServer={selected === SERVER_MACHINE} expected={expectedShape} />}
+        : <StatusPopover snapshot={snapshot} isServer={selected === SERVER_MACHINE} expected={expectedShape} waitingFor={slowLoad ? machineName : null} />}
     </div>
     </TooltipProvider>
   );
