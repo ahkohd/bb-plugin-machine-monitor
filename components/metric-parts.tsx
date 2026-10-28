@@ -82,13 +82,13 @@ export function BarChart({ values, colorFor, label, slots }: { values: Array<num
   const recent = values.slice(-slots);
   const padded = [...Array.from({ length: slots - recent.length }, () => null), ...recent];
   return (
-    <div className="flex h-7 items-end gap-0.5" role="img" aria-label={label}>
+    <div className="flex h-7 items-end gap-[3px]" role="img" aria-label={label}>
       {padded.map((value, index) => (
         <span
           key={index}
           className="min-w-0 flex-1 rounded-[2px] bg-sidebar-border transition-[height] duration-300 motion-reduce:transition-none"
           style={{
-            height: `${value === null ? 8 : Math.max(8, Math.min(100, value))}%`,
+            height: `${value === null ? 14 : Math.max(14, Math.min(100, value))}%`,
             backgroundColor: value === null ? undefined : colorFor(value),
           }}
         />

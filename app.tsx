@@ -17,14 +17,15 @@ const AMBER = "#eab308";
 const RED = "#ef4444";
 // Compact popover: one stacked column, each metric a small row of the same shape.
 const SECTION = "min-w-0 space-y-2 p-3";
-const HISTORY_BARS = 36;
+const HISTORY_BARS = 24;
 
 function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
   const units = ["B", "KB", "MB", "GB", "TB", "PB"];
   const index = Math.max(0, Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1));
-  const precision = index < 2 ? 0 : index === 2 ? 1 : 2;
-  return `${(bytes / 1024 ** index).toFixed(precision)} ${units[index]}`;
+  const value = bytes / 1024 ** index;
+  const precision = index < 2 || value >= 100 ? 0 : value >= 10 ? 1 : 2;
+  return `${Number(value.toFixed(precision))} ${units[index]}`;
 }
 
 // The first reading of rate-based counters needs a second sample.
