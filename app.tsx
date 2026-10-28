@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useMemo, type ReactNode } from "react";
 import { definePluginApp, experimental_Icon as Icon, type ExperimentalSidebarFooterDisclosureProps } from "@get-bb/plugin-sdk/app";
 import type { Machine, ServerSnapshot } from "./server";
 import { SERVER_MACHINE, useServerSnapshot } from "./hooks/use-server-snapshot";
@@ -9,9 +9,9 @@ import { loadErrorCopy } from "./lib/load-error-copy";
 import { TailscaleRows } from "./components/tailscale-section";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Alert02Icon, ArrowDataTransferVerticalIcon, BatteryChargingIcon, BatteryFullIcon, CloudOffIcon, CpuIcon, GpuIcon, HardDriveIcon, RamMemoryIcon, ServerIcon } from "@hugeicons/core-free-icons";
-import { BarChart, BigValue, DetailRow, Footnote, LineChart, METRIC_COLORS, MetricSection, Pill, ProgressBar } from "./components/metric-parts";
+import { BarChart, BigValue, DetailRow, Footnote, LineChart, LoadingText, METRIC_COLORS, MetricSection, Pill, ProgressBar } from "./components/metric-parts";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Skeleton } from "@/components/ui/skeleton";
+import { hasGpuReadings, readPanelShape, rememberPanelShape, type PanelShape } from "./lib/panel-shape";
 
 const GREEN = "#22c55e";
 const AMBER = "#eab308";
@@ -175,7 +175,14 @@ const HEALTH_LABELS = {
   critical: { label: "Critical", tone: "bad", color: METRIC_COLORS.bad },
 } as const;
 
-function SummaryStrip({ snapshot, isServer }: { snapshot: ServerSnapshot; isServer: boolean }) {
+function SummaryStrip({ snapshot, isServer }: { snapshot: ServerSnapshot | null; isServer: boolean }) {
+  if (!snapshot) {
+    return (
+      <div className="flex flex-wrap items-center gap-1 px-3 py-2">
+        {["● Healthy", "macOS · arm64", "16 GB", "8 cores", "up 1d 2h", ...(isServer ? ["bb up 1h 2m"] : [])].map((sample) => <Pill key={sample} loading>{sample}</Pill>)}
+      </div>
+    );
+  }
   const { host, memory, cpu, health, runtime } = snapshot;
   const status = HEALTH_LABELS[health.status];
   const healthPill = (
@@ -203,101 +210,113 @@ function SummaryStrip({ snapshot, isServer }: { snapshot: ServerSnapshot; isServ
   );
 }
 
-function CpuSection({ snapshot }: { snapshot: ServerSnapshot }) {
-  const { cpu, history, sensors } = snapshot;
+function CpuDetails({ snapshot }: { snapshot: ServerSnapshot }) {
+  const { cpu, sensors } = snapshot;
+  const temperature = sensors?.cpuTempC ?? null;
+  return (
+    <>
+      <p className="font-medium">{cpu.model}</p>
+      <DetailRow label="Cores" value={cpu.cores} />
+      {cpu.speedMHz > 0 ? <DetailRow label="Speed" value={`${(cpu.speedMHz / 1000).toFixed(2)} GHz`} /> : null}
+      <DetailRow label="Load 1 · 5 · 15 min" value={cpu.loadAverage.map((value) => value.toFixed(2)).join(" · ")} />
+      {temperature !== null ? <DetailRow label="Temperature" value={`${temperature.toFixed(1)}°C`} /> : null}
+      {sensors?.cpuWatts != null ? <DetailRow label="Power" value={formatWatts(sensors.cpuWatts)} /> : null}
+      <div className="grid grid-cols-4 gap-x-3 gap-y-1 pt-1">
+        {cpu.perCoreUsagePercent.map((value, index) => (
+          <div key={index} className="space-y-0.5">
+            <div className="flex justify-between gap-1 text-2xs tabular-nums opacity-80"><span>{index + 1}</span><span>{value === null ? "–" : `${Math.round(value)}%`}</span></div>
+            <div className="h-1 overflow-hidden rounded-full bg-primary-foreground/20"><div className="h-full rounded-full" style={{ width: `${Math.max(0, Math.min(100, value ?? 0))}%`, backgroundColor: colorForPercent(value) }} /></div>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function CpuSection({ snapshot }: { snapshot: ServerSnapshot | null }) {
+  const cpu = snapshot?.cpu;
+  const sensors = snapshot?.sensors;
   const temperature = sensors?.cpuTempC ?? null;
   return (
     <MetricSection
       label="CPU"
       icon={<SectionIcon icon={CpuIcon} color={METRIC_COLORS.good} />}
-      pill={temperature === null ? <Pill>load {cpu.loadAverage[0].toFixed(2)}</Pill> : <TemperaturePill celsius={temperature} />}
-      details={<>
-        <p className="font-medium">{cpu.model}</p>
-        <DetailRow label="Cores" value={cpu.cores} />
-        {cpu.speedMHz > 0 ? <DetailRow label="Speed" value={`${(cpu.speedMHz / 1000).toFixed(2)} GHz`} /> : null}
-        <DetailRow label="Load 1 · 5 · 15 min" value={cpu.loadAverage.map((value) => value.toFixed(2)).join(" · ")} />
-        {temperature !== null ? <DetailRow label="Temperature" value={`${temperature.toFixed(1)}°C`} /> : null}
-        {sensors?.cpuWatts != null ? <DetailRow label="Power" value={formatWatts(sensors.cpuWatts)} /> : null}
-        <div className="grid grid-cols-4 gap-x-3 gap-y-1 pt-1">
-          {cpu.perCoreUsagePercent.map((value, index) => (
-            <div key={index} className="space-y-0.5">
-              <div className="flex justify-between gap-1 text-2xs tabular-nums opacity-80"><span>{index + 1}</span><span>{value === null ? "–" : `${Math.round(value)}%`}</span></div>
-              <div className="h-1 overflow-hidden rounded-full bg-primary-foreground/20"><div className="h-full rounded-full" style={{ width: `${Math.max(0, Math.min(100, value ?? 0))}%`, backgroundColor: colorForPercent(value) }} /></div>
-            </div>
-          ))}
-        </div>
-      </>}
+      pill={!cpu ? <Pill loading>load 0.00</Pill> : temperature === null ? <Pill>load {cpu.loadAverage[0].toFixed(2)}</Pill> : <TemperaturePill celsius={temperature} />}
+      details={snapshot ? <CpuDetails snapshot={snapshot} /> : undefined}
     >
-      <BigValue value={cpu.usagePercent === null ? null : Math.round(cpu.usagePercent)} unit="%" />
-      <BarChart values={history.map((point) => point.cpuPercent)} colorFor={colorForPercent} label="CPU usage over the last few minutes" slots={HISTORY_BARS} />
-      <Footnote>{joinParts([cpuState(cpu.usagePercent), formatWatts(sensors?.cpuWatts) ?? `${cpu.cores} cores`])}</Footnote>
+      <BigValue value={cpu?.usagePercent == null ? null : Math.round(cpu.usagePercent)} unit="%" />
+      <BarChart values={snapshot?.history.map((point) => point.cpuPercent) ?? []} colorFor={colorForPercent} label="CPU usage over the last few minutes" slots={HISTORY_BARS} />
+      <Footnote>{cpu ? joinParts([cpuState(cpu.usagePercent), formatWatts(sensors?.cpuWatts) ?? `${cpu.cores} cores`]) : <LoadingText sample="normal · 8 cores" />}</Footnote>
     </MetricSection>
   );
 }
 
-function MemorySection({ snapshot }: { snapshot: ServerSnapshot }) {
-  const { memory, history } = snapshot;
-  const pressure = memoryPressure(memory.usagePercent);
+function MemorySection({ snapshot }: { snapshot: ServerSnapshot | null }) {
+  const memory = snapshot?.memory;
+  const pressure = memory ? memoryPressure(memory.usagePercent) : null;
   return (
     <MetricSection
       label="Memory"
       icon={<SectionIcon icon={RamMemoryIcon} color={METRIC_COLORS.memory} />}
-      pill={<Pill tone={pressure.tone}>{pressure.label}</Pill>}
-      details={<>
+      pill={pressure ? <Pill tone={pressure.tone}>{pressure.label}</Pill> : <Pill loading>Normal</Pill>}
+      details={memory ? <>
         <DetailRow label="Used" value={formatBytes(memory.usedBytes)} />
         <DetailRow label="Available" value={formatBytes(memory.availableBytes)} />
         {memory.cachedBytes > 0 ? <DetailRow label="Cached" value={formatBytes(memory.cachedBytes)} /> : null}
         {memory.swapTotalBytes > 0 ? <DetailRow label="Swap" value={`${formatBytes(memory.swapUsedBytes)} of ${formatBytes(memory.swapTotalBytes)}`} /> : null}
-      </>}
+      </> : undefined}
     >
-      <BigValue value={Math.round(memory.usagePercent)} unit="%" />
-      <LineChart series={[{ values: history.map((point) => point.memoryPercent), color: METRIC_COLORS.memory }]} max={100} label="Memory usage over the last few minutes" />
-      <Footnote>{formatBytes(memory.usedBytes)} / {formatBytes(memory.totalBytes)}</Footnote>
+      <BigValue value={memory ? Math.round(memory.usagePercent) : null} unit="%" />
+      <LineChart series={[{ values: snapshot?.history.map((point) => point.memoryPercent) ?? [], color: METRIC_COLORS.memory }]} max={100} label="Memory usage over the last few minutes" />
+      <Footnote>{memory ? `${formatBytes(memory.usedBytes)} / ${formatBytes(memory.totalBytes)}` : <LoadingText sample="8.00 GB / 16 GB" />}</Footnote>
     </MetricSection>
   );
 }
 
-function DiskSection({ snapshot }: { snapshot: ServerSnapshot }) {
-  const { disk } = snapshot;
-  if (!disk) {
-    return <MetricSection label="Free space" icon={<SectionIcon icon={HardDriveIcon} color={METRIC_COLORS.disk} />} pill={<Pill>Unavailable</Pill>}><Footnote>Disk usage could not be read.</Footnote></MetricSection>;
+function DiskSection({ snapshot }: { snapshot: ServerSnapshot | null }) {
+  const disk = snapshot?.disk;
+  const icon = <SectionIcon icon={HardDriveIcon} color={METRIC_COLORS.disk} />;
+  if (snapshot && !disk) {
+    return <MetricSection label="Free space" icon={icon} pill={<Pill>Unavailable</Pill>}><Footnote>Disk usage could not be read.</Footnote></MetricSection>;
   }
-  const free = bytesParts(disk.freeBytes);
+  const free = disk ? bytesParts(disk.freeBytes) : null;
   return (
     <MetricSection
       label="Free space"
-      icon={<SectionIcon icon={HardDriveIcon} color={METRIC_COLORS.disk} />}
-      pill={<Pill>{formatBytes(disk.totalBytes)}</Pill>}
-      details={<>
+      icon={icon}
+      pill={disk ? <Pill>{formatBytes(disk.totalBytes)}</Pill> : <Pill loading>500 GB</Pill>}
+      details={disk ? <>
         <DetailRow label="Mount" value={disk.mount} />
         <DetailRow label="Used" value={formatBytes(disk.usedBytes)} />
         <DetailRow label="Free" value={formatBytes(disk.freeBytes)} />
-      </>}
+      </> : undefined}
     >
-      <BigValue value={free.value} unit={free.unit} />
-      <ProgressBar value={disk.usagePercent} color={disk.usagePercent >= 95 ? METRIC_COLORS.bad : disk.usagePercent >= 85 ? METRIC_COLORS.warn : METRIC_COLORS.disk} label="Disk usage" />
-      <Footnote>{formatBytes(disk.usedBytes)} used · {Math.round(disk.usagePercent)}%</Footnote>
+      <BigValue value={free ? free.value : null} unit={free?.unit} />
+      <ProgressBar value={disk?.usagePercent ?? 0} color={!disk ? METRIC_COLORS.disk : disk.usagePercent >= 95 ? METRIC_COLORS.bad : disk.usagePercent >= 85 ? METRIC_COLORS.warn : METRIC_COLORS.disk} label="Disk usage" />
+      <Footnote>{disk ? `${formatBytes(disk.usedBytes)} used · ${Math.round(disk.usagePercent)}%` : <LoadingText sample="250 GB used · 50%" />}</Footnote>
     </MetricSection>
   );
 }
 
-function NetworkSection({ snapshot }: { snapshot: ServerSnapshot }) {
-  const { network, history } = snapshot;
-  if (!network) {
-    return <MetricSection label="Network" icon={<SectionIcon icon={ArrowDataTransferVerticalIcon} color={METRIC_COLORS.download} />} pill={<Pill>Unavailable</Pill>}><Footnote>Network counters could not be read.</Footnote></MetricSection>;
+function NetworkSection({ snapshot }: { snapshot: ServerSnapshot | null }) {
+  const network = snapshot?.network;
+  const icon = <SectionIcon icon={ArrowDataTransferVerticalIcon} color={METRIC_COLORS.download} />;
+  if (snapshot && !network) {
+    return <MetricSection label="Network" icon={icon} pill={<Pill>Unavailable</Pill>}><Footnote>Network counters could not be read.</Footnote></MetricSection>;
   }
-  const down = network.rxBytesPerSecond === null ? null : bytesParts(network.rxBytesPerSecond);
+  const down = network?.rxBytesPerSecond == null ? null : bytesParts(network.rxBytesPerSecond);
+  const history = snapshot?.history ?? [];
   return (
     <MetricSection
       label="Network"
-      icon={<SectionIcon icon={ArrowDataTransferVerticalIcon} color={METRIC_COLORS.download} />}
-      pill={<Pill>{network.interface}</Pill>}
-      details={<>
+      icon={icon}
+      pill={network ? <Pill>{network.interface}</Pill> : <Pill loading>en0</Pill>}
+      details={network ? <>
         <DetailRow label="Download" value={formatRate(network.rxBytesPerSecond)} />
         <DetailRow label="Upload" value={formatRate(network.txBytesPerSecond)} />
         <DetailRow label="Received" value={formatBytes(network.rxTotalBytes)} />
         <DetailRow label="Sent" value={formatBytes(network.txTotalBytes)} />
-      </>}
+      </> : undefined}
     >
       <BigValue value={down ? down.value : null} unit={down ? `${down.unit}/s down` : undefined} />
       <LineChart
@@ -308,29 +327,32 @@ function NetworkSection({ snapshot }: { snapshot: ServerSnapshot }) {
         label="Download and upload over the last few minutes"
       />
       <Footnote>
-        {network.txBytesPerSecond === null ? "measuring" : <><span style={{ color: METRIC_COLORS.upload }}>●</span> {formatRate(network.txBytesPerSecond)} up</>}
+        {network?.txBytesPerSecond == null
+          ? <LoadingText sample="● 10 KB/s up" />
+          : <><span style={{ color: METRIC_COLORS.upload }}>●</span> {formatRate(network.txBytesPerSecond)} up</>}
       </Footnote>
     </MetricSection>
   );
 }
 
-function GpuSection({ snapshot }: { snapshot: ServerSnapshot }) {
-  const { sensors, history } = snapshot;
-  if (!sensors || (sensors.gpuPercent === null && sensors.gpuTempC === null)) return null;
+function GpuSection({ snapshot }: { snapshot: ServerSnapshot | null }) {
+  const sensors = snapshot?.sensors;
+  if (snapshot && !hasGpuReadings(snapshot)) return null;
+  const history = snapshot?.history ?? [];
   return (
     <MetricSection
       label="GPU"
       icon={<SectionIcon icon={GpuIcon} color={METRIC_COLORS.gpu} />}
-      pill={sensors.gpuTempC === null ? undefined : <TemperaturePill celsius={sensors.gpuTempC} />}
-      details={<>
+      pill={!sensors ? <Pill loading>50°C</Pill> : sensors.gpuTempC === null ? undefined : <TemperaturePill celsius={sensors.gpuTempC} />}
+      details={sensors ? <>
         {sensors.gpuPercent !== null ? <DetailRow label="Usage" value={`${sensors.gpuPercent}%`} /> : null}
         {sensors.gpuTempC !== null ? <DetailRow label="Temperature" value={`${sensors.gpuTempC.toFixed(1)}°C`} /> : null}
         {sensors.gpuWatts !== null ? <DetailRow label="Power" value={formatWatts(sensors.gpuWatts)} /> : null}
-      </>}
+      </> : undefined}
     >
-      <BigValue value={sensors.gpuPercent} unit="%" />
+      <BigValue value={sensors?.gpuPercent ?? null} unit="%" />
       <LineChart series={[{ values: history.map((point) => point.gpuPercent ?? null), color: METRIC_COLORS.gpu }]} max={100} label="GPU usage over the last few minutes" />
-      <Footnote>{joinParts([cpuState(sensors.gpuPercent), formatWatts(sensors.gpuWatts)])}</Footnote>
+      <Footnote>{sensors ? joinParts([cpuState(sensors.gpuPercent), formatWatts(sensors.gpuWatts)]) : <LoadingText sample="idle" />}</Footnote>
     </MetricSection>
   );
 }
@@ -347,9 +369,18 @@ function batteryColor(percent: number, charging: boolean): string {
   return percent > 15 ? METRIC_COLORS.warn : METRIC_COLORS.bad;
 }
 
-function BatterySection({ snapshot }: { snapshot: ServerSnapshot }) {
-  const { battery } = snapshot;
-  if (!battery) return null;
+function BatterySection({ snapshot }: { snapshot: ServerSnapshot | null }) {
+  const battery = snapshot?.battery;
+  if (snapshot && !battery) return null;
+  if (!battery) {
+    return (
+      <MetricSection label="Battery" icon={<SectionIcon icon={BatteryFullIcon} color={METRIC_COLORS.good} />} pill={<Pill loading>90% health</Pill>}>
+        <BigValue value={null} unit="%" />
+        <ProgressBar value={0} color={METRIC_COLORS.good} label="Battery charge" />
+        <Footnote><LoadingText sample="Fully charged" /></Footnote>
+      </MetricSection>
+    );
+  }
   const timeLeft = battery.minutesRemaining === null
     ? null
     : battery.state === "charging"
@@ -379,104 +410,64 @@ function shareColor(share: number, warnAt: number, badAt: number): string | unde
   return share >= warnAt ? METRIC_COLORS.warnDim : undefined;
 }
 
-function ProcessesSection({ snapshot }: { snapshot: ServerSnapshot }) {
+const PROCESS_ROWS = 5;
+const LOADING_PROCESS_NAMES = ["WindowServer", "node", "Helium Helper", "kernel_task", "bb"];
+
+function ProcessRows({ snapshot }: { snapshot: ServerSnapshot | null }) {
+  if (!snapshot) {
+    return LOADING_PROCESS_NAMES.map((name) => (
+      <div key={name} className="contents">
+        <span className="min-w-0 truncate"><LoadingText sample={name} /></span>
+        <span className="text-right tabular-nums"><LoadingText sample="512 MB" /></span>
+        <span className="text-right tabular-nums"><LoadingText sample="1.0" /></span>
+      </div>
+    ));
+  }
   const { processes, memory } = snapshot;
+  if (!processes.available) return <span className="col-span-3 text-muted-foreground">Unavailable</span>;
+  return processes.top.slice(0, PROCESS_ROWS).map((process) => (
+    <div key={process.pid} className="contents">
+      <Tooltip delayDuration={400}>
+        <TooltipTrigger asChild>
+          <span className="min-w-0 truncate text-sidebar-foreground">{process.name}</span>
+        </TooltipTrigger>
+        <TooltipContent side="right" className="text-xs">{process.name} · PID {process.pid}</TooltipContent>
+      </Tooltip>
+      <span className="text-right tabular-nums text-subtle-foreground" style={{ color: shareColor(memory.totalBytes > 0 ? process.rssBytes / memory.totalBytes : 0, 0.25, 0.5) }}>{formatBytes(process.rssBytes)}</span>
+      <span className="text-right tabular-nums text-subtle-foreground" style={{ color: shareColor(process.cpuPercent, 50, 100) }}>{process.cpuPercent.toFixed(1)}</span>
+    </div>
+  ));
+}
+
+function ProcessesSection({ snapshot }: { snapshot: ServerSnapshot | null }) {
   return (
     <section aria-label="Top processes" className="min-w-0 p-3">
       <div className="grid grid-cols-[1fr_auto_3rem] items-center gap-x-3 gap-y-1.5 text-xs">
         <span className="font-medium text-sidebar-foreground">Top processes</span>
         <span className="text-right text-subtle-foreground/75">Memory</span>
         <span className="text-right text-subtle-foreground/75">% CPU</span>
-        {processes.available ? processes.top.slice(0, 5).map((process) => (
-          <div key={process.pid} className="contents">
-            <Tooltip delayDuration={400}>
-              <TooltipTrigger asChild>
-                <span className="min-w-0 truncate text-sidebar-foreground">{process.name}</span>
-              </TooltipTrigger>
-              <TooltipContent side="right" className="text-xs">{process.name} · PID {process.pid}</TooltipContent>
-            </Tooltip>
-            <span className="text-right tabular-nums text-subtle-foreground" style={{ color: shareColor(memory.totalBytes > 0 ? process.rssBytes / memory.totalBytes : 0, 0.25, 0.5) }}>{formatBytes(process.rssBytes)}</span>
-            <span className="text-right tabular-nums text-subtle-foreground" style={{ color: shareColor(process.cpuPercent, 50, 100) }}>{process.cpuPercent.toFixed(1)}</span>
-          </div>
-        )) : <span className="col-span-3 text-muted-foreground">Unavailable</span>}
+        <ProcessRows snapshot={snapshot} />
       </div>
     </section>
   );
 }
 
-function StatusPopover({ snapshot, isServer }: { snapshot: ServerSnapshot; isServer: boolean }) {
+function StatusPopover({ snapshot, isServer, expected }: { snapshot: ServerSnapshot | null; isServer: boolean; expected: PanelShape }) {
   return (
     <>
       <SummaryStrip snapshot={snapshot} isServer={isServer} />
       <CpuSection snapshot={snapshot} />
-      <GpuSection snapshot={snapshot} />
+      {snapshot || expected.gpu ? <GpuSection snapshot={snapshot} /> : null}
       <MemorySection snapshot={snapshot} />
       <DiskSection snapshot={snapshot} />
       <NetworkSection snapshot={snapshot} />
-      <BatterySection snapshot={snapshot} />
-      {snapshot.tailscale ? (
+      {snapshot || expected.battery ? <BatterySection snapshot={snapshot} /> : null}
+      {snapshot?.tailscale ? (
         <Section label="Tailscale">
           <TailscaleRows tailscale={snapshot.tailscale} />
         </Section>
       ) : null}
       <ProcessesSection snapshot={snapshot} />
-    </>
-  );
-}
-
-// Initial placeholders only. Core count and optional rows are unknown until loaded.
-const PULSE = "animate-pulse motion-reduce:animate-none";
-
-function Placeholder({ className }: { className: string }) {
-  return <Skeleton className={`${PULSE} ${className}`} />;
-}
-
-function PlaceholderSection({ label, icon, color, chart }: { label: string; icon: Parameters<typeof HugeiconsIcon>[0]["icon"]; color: string; chart: "bars" | "line" | "bar" }) {
-  return (
-    <section aria-label={`${label}, loading`} className="min-w-0 space-y-2 p-3">
-      <div className="flex min-h-5 items-center justify-between gap-3 text-xs">
-        <span className="flex items-center gap-1.5 font-medium text-sidebar-foreground">
-          <SectionIcon icon={icon} color={color} />
-          {label}
-        </span>
-        <Placeholder className="h-5 w-10" />
-      </div>
-      <Placeholder className="h-6 w-14" />
-      {chart === "bars" ? (
-        <div className="flex h-7 items-end gap-[3px]">
-          {Array.from({ length: HISTORY_BARS }, (_, index) => (
-            <Placeholder key={index} className="h-[14%] min-w-0 flex-1 rounded-[2px]" />
-          ))}
-        </div>
-      ) : chart === "line" ? (
-        <div className="flex h-7 items-end"><Placeholder className="h-1 w-full rounded-full" /></div>
-      ) : (
-        <Placeholder className="h-1.5 w-full rounded-full" />
-      )}
-      <Placeholder className="h-3 w-24" />
-    </section>
-  );
-}
-
-function LoadingPopover() {
-  return (
-    <>
-      <div className="flex flex-wrap gap-1 px-3 py-2">
-        {["w-16", "w-20", "w-12", "w-14", "w-16"].map((width, index) => <Placeholder key={index} className={`h-5 ${width}`} />)}
-      </div>
-      <PlaceholderSection label="CPU" icon={CpuIcon} color={METRIC_COLORS.good} chart="bars" />
-      <PlaceholderSection label="Memory" icon={RamMemoryIcon} color={METRIC_COLORS.memory} chart="line" />
-      <PlaceholderSection label="Free space" icon={HardDriveIcon} color={METRIC_COLORS.disk} chart="bar" />
-      <PlaceholderSection label="Network" icon={ArrowDataTransferVerticalIcon} color={METRIC_COLORS.download} chart="line" />
-      <section aria-label="Top processes, loading" className="min-w-0 space-y-2 p-3">
-        <span className="text-xs font-medium text-sidebar-foreground">Top processes</span>
-        {[0, 1, 2, 3, 4].map((row) => (
-          <div key={row} className="flex items-center justify-between gap-3">
-            <Placeholder className={`h-3 ${row % 2 ? "w-24" : "w-32"}`} />
-            <Placeholder className="h-3 w-20" />
-          </div>
-        ))}
-      </section>
     </>
   );
 }
@@ -525,6 +516,12 @@ function StatusDisclosure({ dismiss }: ExperimentalSidebarFooterDisclosureProps)
   const { machines, selected, setSelected, refresh: refreshMachines } = useMachines();
   const { container, active, snapshot, error, reload, reloading } = useServerSnapshot(selected);
   const errorMessage = error ? loadErrorCopy(error, selectedMachine(machines, selected).name) : "";
+  const expectedShape = useMemo(() => readPanelShape(selected), [selected]);
+  const loadedGpu = snapshot ? hasGpuReadings(snapshot) : null;
+  const loadedBattery = snapshot ? Boolean(snapshot.battery) : null;
+  useEffect(() => {
+    if (loadedGpu !== null && loadedBattery !== null) rememberPanelShape(selected, { gpu: loadedGpu, battery: loadedBattery });
+  }, [selected, loadedGpu, loadedBattery]);
   return (
     <TooltipProvider>
     <div ref={container} data-beacon-shell aria-busy={(active && !snapshot && !error) || reloading} className="w-full min-w-0 divide-y divide-sidebar-border">
@@ -540,9 +537,9 @@ function StatusDisclosure({ dismiss }: ExperimentalSidebarFooterDisclosureProps)
       />
       {error && snapshot ? <StaleNotice message={errorMessage} updatedAt={snapshot.timestamp} /> : null}
       {/* The skeleton gives the shell height so the visibility observer can activate polling. */}
-      {snapshot ? <StatusPopover snapshot={snapshot} isServer={selected === SERVER_MACHINE} /> : (
-        error ? <UnavailableState message={errorMessage} /> : <LoadingPopover />
-      )}
+      {!snapshot && error
+        ? <UnavailableState message={errorMessage} />
+        : <StatusPopover snapshot={snapshot} isServer={selected === SERVER_MACHINE} expected={expectedShape} />}
     </div>
     </TooltipProvider>
   );

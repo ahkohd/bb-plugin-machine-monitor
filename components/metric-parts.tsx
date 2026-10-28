@@ -116,13 +116,25 @@ export function ProgressBar({ value, color, label }: { value: number; color: str
   );
 }
 
-export function Pill({ children, tone = "neutral" }: { children: ReactNode; tone?: "neutral" | "good" | "warn" | "bad" }) {
+const PULSE = "animate-pulse motion-reduce:animate-none";
+
+export function LoadingText({ sample }: { sample: string }) {
+  return (
+    <span aria-hidden="true" className={cn(PULSE, "select-none rounded-sm bg-foreground/[0.07] text-transparent")}>
+      {sample}
+    </span>
+  );
+}
+
+export function Pill({ children, tone = "neutral", loading = false }: { children: ReactNode; tone?: "neutral" | "good" | "warn" | "bad"; loading?: boolean }) {
   return (
     <span
+      aria-hidden={loading || undefined}
       className={cn(
         "inline-flex h-5 shrink-0 items-center gap-1 rounded-md bg-sidebar-accent px-1.5 text-2xs tabular-nums text-subtle-foreground",
         tone === "warn" && "text-[#eab308]",
         tone === "bad" && "text-[#ef4444]",
+        loading && cn(PULSE, "select-none text-transparent"),
       )}
     >
       {children}
@@ -131,17 +143,13 @@ export function Pill({ children, tone = "neutral" }: { children: ReactNode; tone
 }
 
 export function BigValue({ value, unit }: { value: ReactNode | null; unit?: string }) {
-  if (value === null) {
-    return (
-      <p className="flex h-6 items-center" aria-label="Measuring">
-        <span className="h-6 w-12 animate-pulse rounded-md bg-foreground/[0.07] motion-reduce:animate-none" />
-      </p>
-    );
-  }
+  const measuring = value === null;
   return (
-    <p className="flex items-baseline gap-1 leading-none">
-      <span className="text-2xl font-semibold tabular-nums tracking-tight text-sidebar-foreground">{value}</span>
-      {unit ? <span className="text-xs text-muted-foreground">{unit}</span> : null}
+    <p className="flex items-baseline gap-1 leading-none" aria-label={measuring ? "Measuring" : undefined}>
+      <span className="text-2xl font-semibold tabular-nums tracking-tight text-sidebar-foreground">
+        {measuring ? <LoadingText sample="00" /> : value}
+      </span>
+      <span className="text-xs text-muted-foreground">{measuring ? "\u00a0" : unit}</span>
     </p>
   );
 }
