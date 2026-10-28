@@ -3,9 +3,11 @@ import type { ServerSnapshot } from "../server";
 export interface PanelShape {
   gpu: boolean;
   battery: boolean;
+  tailscaleRows: number;
 }
 
-const NO_OPTIONAL_SECTIONS: PanelShape = { gpu: false, battery: false };
+const NO_OPTIONAL_SECTIONS: PanelShape = { gpu: false, battery: false, tailscaleRows: 0 };
+const MAX_TAILSCALE_ROWS = 3;
 
 function storageKey(machineId: string): string {
   return `beacon:shape:${machineId}`;
@@ -21,7 +23,8 @@ export function readPanelShape(machineId: string): PanelShape {
     const stored: unknown = JSON.parse(localStorage.getItem(storageKey(machineId)) ?? "null");
     if (typeof stored !== "object" || stored === null) return NO_OPTIONAL_SECTIONS;
     const shape = stored as Record<string, unknown>;
-    return { gpu: shape.gpu === true, battery: shape.battery === true };
+    const tailscaleRows = typeof shape.tailscaleRows === "number" ? Math.max(0, Math.min(MAX_TAILSCALE_ROWS, Math.floor(shape.tailscaleRows))) : 0;
+    return { gpu: shape.gpu === true, battery: shape.battery === true, tailscaleRows };
   } catch {
     return NO_OPTIONAL_SECTIONS;
   }

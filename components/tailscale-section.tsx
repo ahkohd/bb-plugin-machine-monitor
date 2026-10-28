@@ -6,6 +6,7 @@ import {
 import type { TailscaleInfo } from "../lib/tailscale.ts";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { LoadingText } from "./metric-parts";
 
 const COPIED_MS = 1500;
 
@@ -53,6 +54,27 @@ function CopyValue({ label, value, title }: { label: string; value: string; titl
       </Tooltip>
     </div>
   );
+}
+
+export function tailscaleRowCount(tailscale: TailscaleInfo): number {
+  return 1 + (tailscale.ipv4 || tailscale.ipv6 ? 1 : 0) + (tailscale.tags.length > 0 ? 1 : 0);
+}
+
+const LOADING_ROWS = [
+  { label: "Name", sample: "machine.tailnet.ts.net" },
+  { label: "IPv4", sample: "100.100.100.100" },
+  { label: "Tags", sample: "tag:server" },
+];
+
+export function LoadingTailscaleRows({ rows }: { rows: number }) {
+  return LOADING_ROWS.slice(0, rows).map(({ label, sample }) => (
+    <div key={label} className="flex items-center justify-between gap-2 text-xs">
+      <span className="shrink-0 text-subtle-foreground/75">{label}</span>
+      <span className="-mr-1 flex min-w-0 items-center gap-1 px-1 py-0.5">
+        <span className="min-w-0 truncate"><LoadingText sample={sample} /></span>
+      </span>
+    </div>
+  ));
 }
 
 export function TailscaleRows({ tailscale }: { tailscale: TailscaleInfo }) {

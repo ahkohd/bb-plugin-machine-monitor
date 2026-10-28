@@ -111,3 +111,20 @@ test("load errors read as plain messages without transport details", async () =>
   assert.equal(loadErrorCopy("Host request timed out", "mbp"), "Can't reach mbp.");
   assert.equal(loadErrorCopy("Unexpected snapshot shape", "mbp"), "Couldn't get stats from mbp.");
 });
+
+test("the remembered panel layout survives bad storage and clamps tailscale rows", async () => {
+  const store = new Map();
+  globalThis.localStorage = { getItem: (key) => store.get(key) ?? null, setItem: (key, value) => store.set(key, value) };
+  try {
+    const { readPanelShape, rememberPanelShape } = await import("../lib/panel-shape.ts");
+    assert.deepEqual(readPanelShape("host_mac"), { gpu: false, battery: false, tailscaleRows: 0 });
+    rememberPanelShape("host_mac", { gpu: true, battery: true, tailscaleRows: 3 });
+    assert.deepEqual(readPanelShape("host_mac"), { gpu: true, battery: true, tailscaleRows: 3 });
+    store.set("beacon:shape:host_box", JSON.stringify({ gpu: "yes", tailscaleRows: 40 }));
+    assert.deepEqual(readPanelShape("host_box"), { gpu: false, battery: false, tailscaleRows: 3 });
+    store.set("beacon:shape:host_box", "{not json");
+    assert.deepEqual(readPanelShape("host_box"), { gpu: false, battery: false, tailscaleRows: 0 });
+  } finally {
+    delete globalThis.localStorage;
+  }
+});

@@ -6,7 +6,7 @@ import { machineKey, useMachines } from "./hooks/use-machines";
 import { PressureNotifications, bindStatusOpener } from "./components/pressure-notifications";
 import { MachinePicker, selectedMachine } from "./components/machine-picker";
 import { loadErrorCopy } from "./lib/load-error-copy";
-import { TailscaleRows } from "./components/tailscale-section";
+import { LoadingTailscaleRows, TailscaleRows, tailscaleRowCount } from "./components/tailscale-section";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Alert02Icon, ArrowDataTransferVerticalIcon, BatteryChargingIcon, BatteryFullIcon, CloudOffIcon, CpuIcon, GpuIcon, HardDriveIcon, RamMemoryIcon, ServerIcon } from "@hugeicons/core-free-icons";
 import { BarChart, BigValue, DetailRow, Footnote, LineChart, LoadingText, METRIC_COLORS, MetricSection, Pill, ProgressBar } from "./components/metric-parts";
@@ -466,6 +466,10 @@ function StatusPopover({ snapshot, isServer, expected }: { snapshot: ServerSnaps
         <Section label="Tailscale">
           <TailscaleRows tailscale={snapshot.tailscale} />
         </Section>
+      ) : !snapshot && expected.tailscaleRows > 0 ? (
+        <Section label="Tailscale">
+          <LoadingTailscaleRows rows={expected.tailscaleRows} />
+        </Section>
       ) : null}
       <ProcessesSection snapshot={snapshot} />
     </>
@@ -519,9 +523,11 @@ function StatusDisclosure({ dismiss }: ExperimentalSidebarFooterDisclosureProps)
   const expectedShape = useMemo(() => readPanelShape(selected), [selected]);
   const loadedGpu = snapshot ? hasGpuReadings(snapshot) : null;
   const loadedBattery = snapshot ? Boolean(snapshot.battery) : null;
+  const loadedTailscaleRows = snapshot ? (snapshot.tailscale ? tailscaleRowCount(snapshot.tailscale) : 0) : null;
   useEffect(() => {
-    if (loadedGpu !== null && loadedBattery !== null) rememberPanelShape(selected, { gpu: loadedGpu, battery: loadedBattery });
-  }, [selected, loadedGpu, loadedBattery]);
+    if (loadedGpu === null || loadedBattery === null || loadedTailscaleRows === null) return;
+    rememberPanelShape(selected, { gpu: loadedGpu, battery: loadedBattery, tailscaleRows: loadedTailscaleRows });
+  }, [selected, loadedGpu, loadedBattery, loadedTailscaleRows]);
   return (
     <TooltipProvider>
     <div ref={container} data-beacon-shell aria-busy={(active && !snapshot && !error) || reloading} className="w-full min-w-0 divide-y divide-sidebar-border">
