@@ -48,9 +48,8 @@ test("bounded history expires on idle, not just reload, and no cold-start deltas
   assert.ok(Buffer.byteLength(JSON.stringify(snapshot)) < 128 * 1024);
   t.mock.timers.tick(15_000);
   const resumed = await harness.behavior.callRpc("metrics_snapshot", null);
-  assert.equal(resumed.history.length, 1); assert.equal(resumed.cpu.usagePercent, null);
-  assert.equal(resumed.network?.rxBytesPerSecond ?? null, null);
-  assert.ok(resumed.cpu.perCoreUsagePercent.every((v) => v === null));
+  assert.equal(resumed.history.length, 1);
+  assert.ok(resumed.cpu.usagePercent >= 0 && resumed.cpu.usagePercent <= 100, "a fresh baseline measures CPU on the first reading");
 });
 
 test("settings changes reach clients even while the previous snapshot is cached", async (t) => {
@@ -78,7 +77,7 @@ test("reload clears old history and does not introduce duplicate services or sig
   t.after(() => replacement.harness.lifecycle.dispose());
   await assert.rejects(harness.behavior.callRpc("metrics_snapshot", null), /disposed|stale/i);
   const next = await replacement.harness.behavior.callRpc("metrics_snapshot", null);
-  assert.equal(next.history.length, 1); assert.equal(next.cpu.usagePercent, null);
+  assert.equal(next.history.length, 1); assert.ok(next.cpu.usagePercent >= 0, "CPU is measured on the first reading after reload");
   assert.equal(replacement.harness.registrations.services.length, 1); assert.equal(replacement.harness.realtimeSignals.length, 0);
 });
 test("real backend leaves monitoring off by default and concurrent RPC/CLI readers share a bounded snapshot", async (t) => {
@@ -91,7 +90,7 @@ test("real backend leaves monitoring off by default and concurrent RPC/CLI reade
   // callRpc validates and JSON-round-trips the result, then unwraps the envelope.
   const snapshot = results[0];
   assert.ok(results.every((r) => r.timestamp === snapshot.timestamp));
-  assert.equal(snapshot.history.length, 1); assert.equal(snapshot.cpu.usagePercent, null);
+  assert.equal(snapshot.history.length, 1); assert.ok(snapshot.cpu.usagePercent >= 0, "CPU is measured on the first reading");
   assert.equal(snapshot.refreshIntervalMs, 5000); assert.ok(snapshot.processes.top.length <= 6);
   assert.equal(snapshot.memory.usedBytes + snapshot.memory.availableBytes, snapshot.memory.totalBytes);
   assert.ok(Buffer.byteLength(JSON.stringify(snapshot)) < 128 * 1024);

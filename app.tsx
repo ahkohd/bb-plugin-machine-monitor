@@ -150,7 +150,7 @@ function bytesParts(bytes: number): { value: string; unit: string } {
 }
 
 function cpuState(percent: number | null): string {
-  if (percent === null) return "sampling";
+  if (percent === null) return "measuring";
   if (percent < 25) return "idle";
   if (percent < 75) return "normal";
   return "busy";
@@ -223,7 +223,7 @@ function CpuSection({ snapshot }: { snapshot: ServerSnapshot }) {
         </div>
       </>}
     >
-      <BigValue value={cpu.usagePercent === null ? "–" : Math.round(cpu.usagePercent)} unit="%" />
+      <BigValue value={cpu.usagePercent === null ? null : Math.round(cpu.usagePercent)} unit="%" />
       <BarChart values={history.map((point) => point.cpuPercent)} colorFor={colorForPercent} label="CPU usage over the last few minutes" slots={HISTORY_BARS} />
       <Footnote>{joinParts([cpuState(cpu.usagePercent), formatWatts(sensors?.cpuWatts) ?? `${cpu.cores} cores`])}</Footnote>
     </MetricSection>
@@ -294,7 +294,7 @@ function NetworkSection({ snapshot }: { snapshot: ServerSnapshot }) {
         <DetailRow label="Sent" value={formatBytes(network.txTotalBytes)} />
       </>}
     >
-      <BigValue value={down ? down.value : "–"} unit={down ? `${down.unit}/s down` : undefined} />
+      <BigValue value={down ? down.value : null} unit={down ? `${down.unit}/s down` : undefined} />
       <LineChart
         series={[
           { values: history.map((point) => point.networkRxBytesPerSecond), color: METRIC_COLORS.download },
@@ -303,7 +303,7 @@ function NetworkSection({ snapshot }: { snapshot: ServerSnapshot }) {
         label="Download and upload over the last few minutes"
       />
       <Footnote>
-        <span style={{ color: METRIC_COLORS.upload }}>●</span> {formatRate(network.txBytesPerSecond)} up
+        {network.txBytesPerSecond === null ? "measuring" : <><span style={{ color: METRIC_COLORS.upload }}>●</span> {formatRate(network.txBytesPerSecond)} up</>}
       </Footnote>
     </MetricSection>
   );
@@ -323,7 +323,7 @@ function GpuSection({ snapshot }: { snapshot: ServerSnapshot }) {
         {sensors.gpuWatts !== null ? <DetailRow label="Power" value={formatWatts(sensors.gpuWatts)} /> : null}
       </>}
     >
-      <BigValue value={sensors.gpuPercent ?? "–"} unit="%" />
+      <BigValue value={sensors.gpuPercent} unit="%" />
       <LineChart series={[{ values: history.map((point) => point.gpuPercent ?? null), color: METRIC_COLORS.gpu }]} max={100} label="GPU usage over the last few minutes" />
       <Footnote>{joinParts([cpuState(sensors.gpuPercent), formatWatts(sensors.gpuWatts)])}</Footnote>
     </MetricSection>
@@ -420,14 +420,58 @@ function StatusPopover({ snapshot, isServer }: { snapshot: ServerSnapshot; isSer
 }
 
 // Initial placeholders only. Core count and optional rows are unknown until loaded.
-const LOADING_SECTIONS = [["CPU", "h-20"], ["Memory", "h-20"], ["Free space", "h-16"], ["Network", "h-20"], ["Top processes", "h-24"]] as const;
+const PULSE = "animate-pulse motion-reduce:animate-none";
+
+function Placeholder({ className }: { className: string }) {
+  return <Skeleton className={`${PULSE} ${className}`} />;
+}
+
+function PlaceholderSection({ label, icon, color, chart }: { label: string; icon: Parameters<typeof HugeiconsIcon>[0]["icon"]; color: string; chart: "bars" | "line" | "bar" }) {
+  return (
+    <section aria-label={`${label}, loading`} className="min-w-0 space-y-2 p-3">
+      <div className="flex min-h-5 items-center justify-between gap-3 text-xs">
+        <span className="flex items-center gap-1.5 font-medium text-sidebar-foreground">
+          <SectionIcon icon={icon} color={color} />
+          {label}
+        </span>
+        <Placeholder className="h-5 w-10" />
+      </div>
+      <Placeholder className="h-6 w-14" />
+      {chart === "bars" ? (
+        <div className="flex h-7 items-end gap-[3px]">
+          {Array.from({ length: HISTORY_BARS }, (_, index) => (
+            <Placeholder key={index} className="h-[14%] min-w-0 flex-1 rounded-[2px]" />
+          ))}
+        </div>
+      ) : chart === "line" ? (
+        <div className="flex h-7 items-end"><Placeholder className="h-1 w-full rounded-full" /></div>
+      ) : (
+        <Placeholder className="h-1.5 w-full rounded-full" />
+      )}
+      <Placeholder className="h-3 w-24" />
+    </section>
+  );
+}
 
 function LoadingPopover() {
   return (
     <>
-      {LOADING_SECTIONS.map(([label, height]) => (
-        <Section key={label} label={label}><Skeleton className={`${height} w-full`} /></Section>
-      ))}
+      <div className="flex flex-wrap gap-1 px-3 py-2">
+        {["w-16", "w-20", "w-12", "w-14", "w-16"].map((width, index) => <Placeholder key={index} className={`h-5 ${width}`} />)}
+      </div>
+      <PlaceholderSection label="CPU" icon={CpuIcon} color={METRIC_COLORS.good} chart="bars" />
+      <PlaceholderSection label="Memory" icon={RamMemoryIcon} color={METRIC_COLORS.memory} chart="line" />
+      <PlaceholderSection label="Free space" icon={HardDriveIcon} color={METRIC_COLORS.disk} chart="bar" />
+      <PlaceholderSection label="Network" icon={ArrowDataTransferVerticalIcon} color={METRIC_COLORS.download} chart="line" />
+      <section aria-label="Top processes, loading" className="min-w-0 space-y-2 p-3">
+        <span className="text-xs font-medium text-sidebar-foreground">Top processes</span>
+        {[0, 1, 2, 3, 4].map((row) => (
+          <div key={row} className="flex items-center justify-between gap-3">
+            <Placeholder className={`h-3 ${row % 2 ? "w-24" : "w-32"}`} />
+            <Placeholder className="h-3 w-20" />
+          </div>
+        ))}
+      </section>
     </>
   );
 }
@@ -460,7 +504,7 @@ function StatusDisclosure({ dismiss }: ExperimentalSidebarFooterDisclosureProps)
         onSelect={setSelected}
         onOpen={() => void refreshMachines()}
         actions={<>
-          <ReloadButton onReload={reload} reloading={reloading} updatedAt={snapshot?.timestamp ?? null} />
+          <ReloadButton onReload={reload} reloading={reloading || (!snapshot && !error)} updatedAt={snapshot?.timestamp ?? null} />
           <CollapseButton onCollapse={dismiss} />
         </>}
       />

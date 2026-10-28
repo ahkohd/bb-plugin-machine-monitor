@@ -130,7 +130,14 @@ export function Pill({ children, tone = "neutral" }: { children: ReactNode; tone
   );
 }
 
-export function BigValue({ value, unit }: { value: ReactNode; unit?: string }) {
+export function BigValue({ value, unit }: { value: ReactNode | null; unit?: string }) {
+  if (value === null) {
+    return (
+      <p className="flex h-6 items-center" aria-label="Measuring">
+        <span className="h-6 w-12 animate-pulse rounded-md bg-foreground/[0.07] motion-reduce:animate-none" />
+      </p>
+    );
+  }
   return (
     <p className="flex items-baseline gap-1 leading-none">
       <span className="text-2xl font-semibold tabular-nums tracking-tight text-sidebar-foreground">{value}</span>

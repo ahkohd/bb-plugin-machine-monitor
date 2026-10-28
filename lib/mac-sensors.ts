@@ -20,6 +20,11 @@ function finiteOrNull(value: unknown, max: number): number | null {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= max ? value : null;
 }
 
+function measuredWatts(value: unknown): number | null {
+  const watts = finiteOrNull(value, 1000);
+  return watts === null || watts === 0 ? null : watts;
+}
+
 export function parseSensorOutput(source: string): Omit<MacSensors, "gpuPercent"> | null {
   try {
     const parsed: unknown = JSON.parse(source);
@@ -28,8 +33,8 @@ export function parseSensorOutput(source: string): Omit<MacSensors, "gpuPercent"
     return {
       cpuTempC: finiteOrNull(value.cpuTempC, 150),
       gpuTempC: finiteOrNull(value.gpuTempC, 150),
-      cpuWatts: finiteOrNull(value.cpuWatts, 1000),
-      gpuWatts: finiteOrNull(value.gpuWatts, 1000),
+      cpuWatts: measuredWatts(value.cpuWatts),
+      gpuWatts: measuredWatts(value.gpuWatts),
     };
   } catch {
     return null;

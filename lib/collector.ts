@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { readFile, readlink, statfs } from "node:fs/promises";
 import { arch, cpus, freemem, hostname, loadavg, platform, release, totalmem, uptime } from "node:os";
 import { promisify } from "node:util";
+import { setTimeout as sleep } from "node:timers/promises";
 import { basename } from "node:path";
 import type { MetricPoint, Processes, ServerSnapshot } from "../contract.ts";
 import { createTailscaleReader } from "./tailscale.ts";
@@ -281,6 +282,8 @@ function assessHealth(
   };
 }
 
+const BASELINE_WINDOW_MS = 300;
+
 export function createCollector(refreshIntervalMs: () => number) {
   const readTailscale = createTailscaleReader();
   let previousCpuTimes: CpuTimes | null = null;
@@ -289,7 +292,17 @@ export function createCollector(refreshIntervalMs: () => number) {
   let previousNetworkTimestamp: number | null = null;
   const history: MetricPoint[] = [];
 
+  async function takeBaseline(signal: AbortSignal) {
+    const cpuList = cpus();
+    previousCpuTimes = readCpuTimes(cpuList);
+    previousPerCoreTimes = cpuList.map(cpuTimesFor);
+    previousNetworkTotals = await readNetworkTotals(signal);
+    previousNetworkTimestamp = performance.now();
+    await sleep(BASELINE_WINDOW_MS, undefined, { signal });
+  }
+
   async function collect(signal: AbortSignal): Promise<ServerSnapshot> {
+    if (previousCpuTimes === null) await takeBaseline(signal);
     const cpuList = cpus();
     const cpuTimes = readCpuTimes(cpuList);
     const perCoreTimes = cpuList.map(cpuTimesFor);
