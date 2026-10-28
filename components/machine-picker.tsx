@@ -96,7 +96,7 @@ export function MachinePicker({
         <span className="min-w-0 truncate">{displayName(machines, selected)}</span>
         <Icon name="ChevronDown" className="size-4 shrink-0 text-muted-foreground" aria-hidden />
       </PopoverTrigger>
-      <PopoverContent className="w-60 p-0" side="top">
+      <PopoverContent className="w-60 p-0" side="bottom">
         <div className="border-b border-border p-1">
           <input
             autoFocus
