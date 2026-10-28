@@ -4,7 +4,8 @@ import type { Machine, ServerSnapshot } from "./server";
 import { SERVER_MACHINE, useServerSnapshot } from "./hooks/use-server-snapshot";
 import { machineKey, useMachines } from "./hooks/use-machines";
 import { PressureNotifications, bindStatusOpener } from "./components/pressure-notifications";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { MachinePicker } from "./components/machine-picker";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const GREEN = "#22c55e";
@@ -102,23 +103,42 @@ function Row({ label, value, title }: { label: string; value: ReactNode; title?:
 
 const HEADER_BUTTON_CLASS = "flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring disabled:opacity-50";
 
-function ReloadButton({ onReload, reloading }: { onReload: () => void; reloading: boolean }) {
+function HeaderButton({ label, tooltip, onClick, disabled, busy, children }: { label: string; tooltip: ReactNode; onClick: () => void; disabled?: boolean; busy?: boolean; children: ReactNode }) {
   return (
-    <button type="button" className={HEADER_BUTTON_CLASS} aria-label="Reload machine status" aria-busy={reloading} disabled={reloading} onClick={onReload}>
+    <Tooltip delayDuration={350} disableHoverableContent>
+      <TooltipTrigger asChild>
+        <button type="button" className={HEADER_BUTTON_CLASS} aria-label={label} aria-busy={busy} disabled={disabled} onClick={onClick}>
+          {children}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="top">{tooltip}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+function ReloadButton({ onReload, reloading, updatedAt }: { onReload: () => void; reloading: boolean; updatedAt: string | null }) {
+  return (
+    <HeaderButton
+      label="Reload machine status"
+      tooltip={reloading ? "Reloading" : updatedAt ? `${formatUpdatedAt(updatedAt)} · Reload` : "Reload"}
+      onClick={onReload}
+      disabled={reloading}
+      busy={reloading}
+    >
       <Icon
         name={reloading ? "Loading" : "RotateCcw"}
         className={reloading ? "size-3.5 animate-spin motion-reduce:animate-none" : "size-3.5"}
         aria-hidden
       />
-    </button>
+    </HeaderButton>
   );
 }
 
 function CollapseButton({ onCollapse }: { onCollapse: () => void }) {
   return (
-    <button type="button" className={HEADER_BUTTON_CLASS} aria-label="Hide machine status" onClick={onCollapse}>
+    <HeaderButton label="Hide machine status" tooltip="Hide" onClick={onCollapse}>
       <Icon name="ChevronDown" className="size-3.5" aria-hidden />
-    </button>
+    </HeaderButton>
   );
 }
 
@@ -182,41 +202,14 @@ function LoadingPopover() {
   );
 }
 
-const MACHINE_GROUPS: { label: string; includes: (machine: Machine) => boolean }[] = [
-  { label: "Machines", includes: (machine) => !machine.isBox },
-  { label: "Boxes", includes: (machine) => machine.isBox },
-];
-
-function MachinePicker({ machines, selected, onSelect, trailing }: { machines: Machine[] | null; selected: string; onSelect: (machineId: string) => void; trailing: ReactNode }) {
-  const options = machines ?? [];
-  const known = options.some((machine) => machineKey(machine) === selected);
+function MachineHeader({ machines, selected, onSelect, actions }: { machines: Machine[] | null; selected: string; onSelect: (machineId: string) => void; actions: ReactNode }) {
   return (
-    <div className="sticky top-0 z-10 flex h-9 min-w-0 items-center gap-1 bg-sidebar px-1.5">
-      <Select value={selected} onValueChange={onSelect} disabled={machines === null}>
-        <SelectTrigger aria-label="Machine" className="h-6 w-fit min-w-0 max-w-full shrink justify-start gap-1 border-none bg-transparent px-1.5 text-xs font-medium text-sidebar-foreground shadow-none hover:bg-sidebar-accent focus:ring-0 focus-visible:ring-2 focus-visible:ring-sidebar-ring [&>svg]:size-3.5">
-          <SelectValue placeholder="This bb server" />
-        </SelectTrigger>
-        <SelectContent>
-          {known ? null : <SelectItem value={SERVER_MACHINE} className="text-xs">This bb server</SelectItem>}
-          {MACHINE_GROUPS.map(({ label, includes }) => {
-            const group = options.filter(includes);
-            if (group.length === 0) return null;
-            return (
-              <SelectGroup key={label}>
-                <SelectLabel>{label}</SelectLabel>
-                {group.map((machine) => (
-                  <SelectItem key={machine.id} value={machineKey(machine)} disabled={!machine.connected} className="text-xs">
-                    {machine.name}
-                    {machine.isServer ? " · server" : ""}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            );
-          })}
-        </SelectContent>
-      </Select>
-      <span className="flex-1" />
-      {trailing}
+    <div className="sticky top-0 z-10 bg-sidebar">
+      <div className="flex h-9 min-w-0 items-center gap-1 bg-sidebar-accent/50 px-1.5">
+        <MachinePicker machines={machines} selected={selected} onSelect={onSelect} />
+        <span className="flex-1" />
+        {actions}
+      </div>
     </div>
   );
 }
@@ -225,13 +218,14 @@ function StatusDisclosure({ dismiss }: ExperimentalSidebarFooterDisclosureProps)
   const { machines, selected, setSelected } = useMachines();
   const { container, active, snapshot, error, reload, reloading } = useServerSnapshot(selected);
   return (
+    <TooltipProvider>
     <div ref={container} data-beacon-shell aria-busy={(active && !snapshot && !error) || reloading} className="w-full min-w-0 divide-y divide-sidebar-border">
-      <MachinePicker
+      <MachineHeader
         machines={machines}
         selected={selected}
         onSelect={setSelected}
-        trailing={<>
-          <ReloadButton onReload={reload} reloading={reloading} />
+        actions={<>
+          <ReloadButton onReload={reload} reloading={reloading} updatedAt={snapshot?.timestamp ?? null} />
           <CollapseButton onCollapse={dismiss} />
         </>}
       />
@@ -241,6 +235,7 @@ function StatusDisclosure({ dismiss }: ExperimentalSidebarFooterDisclosureProps)
         error ? <div className="p-3 text-xs text-muted-foreground">Machine data unavailable. Retrying while visible.</div> : <LoadingPopover />
       )}
     </div>
+    </TooltipProvider>
   );
 }
 
