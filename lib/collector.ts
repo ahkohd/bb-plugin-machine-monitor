@@ -146,7 +146,9 @@ async function readProcesses(signal: AbortSignal): Promise<Processes> {
       { timeout: 1500, maxBuffer: 512 * 1024, signal, env: { ...process.env, LC_ALL: "C" } },
     );
     const processes = parseProcesses(stdout);
-    if (platform() === "linux") {
+    if (platform() !== "linux") {
+      for (const entry of processes.top) entry.name = basename(entry.name).slice(0, 128);
+    } else {
       // Node can rename comm to MainThread. Resolve six symlinks, not command-line
       // contents (which can be large or include credentials and arguments).
       await Promise.all(processes.top.map(async (entry) => {
