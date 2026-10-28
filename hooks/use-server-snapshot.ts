@@ -27,7 +27,11 @@ export function useServerSnapshot(machineId: string) {
   const pollerRef = useRef<ReturnType<typeof createVisiblePoller<ServerSnapshot>> | null>(null);
   const forceRefresh = useRef(false);
   const [active, setActive] = useState(false);
-  const [snapshot, setSnapshot] = useState<ServerSnapshot | null>(() => sourceFor(machineId).snapshot());
+  const [reading, setReading] = useState<{ machineId: string; snapshot: ServerSnapshot | null }>(() => ({
+    machineId,
+    snapshot: sourceFor(machineId).snapshot(),
+  }));
+  const snapshot = reading.machineId === machineId ? reading.snapshot : sourceFor(machineId).snapshot();
   const [error, setError] = useState<string | null>(null);
   const [reloading, setReloading] = useState(false);
 
@@ -35,7 +39,7 @@ export function useServerSnapshot(machineId: string) {
     const element = container.current;
     if (!element) return;
     const source = sourceFor(machineId);
-    setSnapshot(source.snapshot());
+    setReading({ machineId, snapshot: source.snapshot() });
     setError(null);
     let intersecting = false;
     let pageHidden = false;
@@ -51,7 +55,7 @@ export function useServerSnapshot(machineId: string) {
           force,
         );
       },
-      receive(next) { setSnapshot(next); setError(null); setReloading(false); },
+      receive(next) { setReading({ machineId, snapshot: next }); setError(null); setReloading(false); },
       error(cause) { setError(cause instanceof Error ? cause.message : String(cause)); setReloading(false); },
       intervalMs: (next) => next.refreshIntervalMs,
     });

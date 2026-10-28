@@ -51,6 +51,7 @@ export function machineKey(machine: Machine): string {
 export function useMachines() {
   const rpc = useRpc<typeof rpcContract>();
   const [machines, setMachines] = useState<Machine[] | null>(readCachedMachines);
+  const [listIsFresh, setListIsFresh] = useState(false);
   const [selected, setSelectedState] = useState(readSelectedMachine);
 
   const latestRequest = useRef(0);
@@ -61,6 +62,7 @@ export function useMachines() {
         const { machines: next } = await rpc.call("machines_list", null);
         if (request === latestRequest.current) {
           setMachines(next);
+          setListIsFresh(true);
           writeCachedMachines(next);
         }
         return;
@@ -79,6 +81,7 @@ export function useMachines() {
 
   const selectedExists =
     selected === SERVER_MACHINE ||
+    !listIsFresh ||
     machines === null ||
     machines.some((machine) => machineKey(machine) === selected);
 

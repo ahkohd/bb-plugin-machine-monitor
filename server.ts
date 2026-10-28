@@ -105,8 +105,8 @@ export default async function plugin(bb: BbPluginApi) {
     intervalMs: () => refreshIntervalMs,
     reset: collector.reset,
   });
-  const sample = async () => {
-    const snapshot = await sampler.sample();
+  const sample = async (force = false) => {
+    const snapshot = await sampler.sample(force);
     // Settings may change while a snapshot is cached; clients need the new cadence now.
     return snapshot.refreshIntervalMs === refreshIntervalMs ? snapshot : { ...snapshot, refreshIntervalMs };
   };
@@ -152,7 +152,7 @@ export default async function plugin(bb: BbPluginApi) {
 
   const machineSnapshot = async (hostId: string, force: boolean) => {
     if (hostId === (await primaryHostId())) {
-      return force ? sampler.sample(true) : sample();
+      return sample(force);
     }
     return hostClient.call(
       "machine_snapshot",
@@ -163,7 +163,7 @@ export default async function plugin(bb: BbPluginApi) {
 
   bb.rpc.register(rpcContract, {
     metrics_snapshot: () => sample(),
-    metrics_refresh: () => sampler.sample(true),
+    metrics_refresh: () => sample(true),
     machines_list: async () => ({ machines: await listMachines() }),
     machine_snapshot: ({ hostId, force }) => machineSnapshot(hostId, force),
     monitor_status: () => monitor.status(),

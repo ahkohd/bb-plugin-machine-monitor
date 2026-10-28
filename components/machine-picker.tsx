@@ -76,6 +76,8 @@ export function MachinePicker({
   );
   const current = selectedMachine(machines, selected);
 
+  const activeIndex = Math.min(highlighted, Math.max(0, flat.length - 1));
+
   const choose = (machine: Machine) => {
     onSelect(machineKey(machine));
     setOpen(false);
@@ -92,13 +94,13 @@ export function MachinePicker({
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      moveHighlight(highlighted + 1);
+      moveHighlight(activeIndex + 1);
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
-      moveHighlight(highlighted - 1);
+      moveHighlight(activeIndex - 1);
     } else if (event.key === "Enter") {
       event.preventDefault();
-      const machine = flat[highlighted];
+      const machine = flat[activeIndex];
       if (machine) choose(machine);
     }
   };
@@ -164,7 +166,7 @@ export function MachinePicker({
                   onClick={() => choose(machine)}
                   className={cn(
                     "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs text-foreground outline-none",
-                    itemIndex === highlighted && "bg-state-hover",
+                    itemIndex === activeIndex && "bg-state-hover",
                   )}
                 >
                   <KindIcon kind={kindOf(machine)} className="text-muted-foreground" />
