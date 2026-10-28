@@ -81,3 +81,14 @@ test("macOS netstat parsing picks the busiest link and skips loopback and per-ad
   assert.deepEqual(parseNetstatLinks(source), { interface: "en0", rxBytes: 8000000000, txBytes: 2000000000 });
   assert.equal(parseNetstatLinks("Name Mtu Network Address\n"), null);
 });
+
+test("looks up the bb server's host id once, not on every poll", async (t) => {
+  const remote = await hostEntry.handlers.machine_snapshot({ refreshIntervalMs: 5000, force: true }, {});
+  const harness = await startBeacon(t, async () => remote);
+  await harness.behavior.callRpc("machines_list", null);
+  for (let i = 0; i < 5; i++) {
+    await harness.behavior.callRpc("machine_snapshot", { hostId: "host_mac", force: false });
+  }
+  await harness.behavior.callRpc("machines_list", null);
+  assert.equal(harness.inspection.sdk.callsTo("system.config").length, 1);
+});
