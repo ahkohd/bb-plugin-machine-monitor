@@ -21,6 +21,7 @@ export {
   calculateNetworkRates,
   parseNetstatLinks,
   parseVmStatAvailableBytes,
+  parseWindowsNetstat,
   parseProcesses,
 } from "./lib/collector.ts";
 

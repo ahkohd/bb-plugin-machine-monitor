@@ -156,8 +156,44 @@ async function readMacNetworkTotals(signal: AbortSignal): Promise<NetworkTotals 
   }
 }
 
+const WINDOWS_NETSTAT = "/mnt/c/Windows/System32/netstat.exe";
+
+export function parseWindowsNetstat(source: string): NetworkTotals | null {
+  const match = /^Bytes\s+(\d+)\s+(\d+)\s*$/m.exec(source.replace(/\r/g, ""));
+  if (!match) return null;
+  const rxBytes = Number(match[1]);
+  const txBytes = Number(match[2]);
+  if (!Number.isSafeInteger(rxBytes) || !Number.isSafeInteger(txBytes)) return null;
+  return { interface: "Windows", rxBytes, txBytes };
+}
+
+let runsInWsl: Promise<boolean> | null = null;
+
+function isWsl(): Promise<boolean> {
+  runsInWsl ??= platform() !== "linux"
+    ? Promise.resolve(false)
+    : readFile("/proc/version", "utf8").then(
+        (version) => /microsoft/i.test(version),
+        () => false,
+      );
+  return runsInWsl;
+}
+
+async function readWindowsNetworkTotals(signal: AbortSignal): Promise<NetworkTotals | null> {
+  try {
+    const { stdout } = await execFileAsync(WINDOWS_NETSTAT, ["-e"], { timeout: 1500, maxBuffer: 64 * 1024, signal, windowsHide: true });
+    return parseWindowsNetstat(stdout);
+  } catch {
+    return null;
+  }
+}
+
 async function readNetworkTotals(signal: AbortSignal): Promise<NetworkTotals | null> {
   if (platform() === "darwin") return readMacNetworkTotals(signal);
+  if (await isWsl()) {
+    const windows = await readWindowsNetworkTotals(signal);
+    if (windows !== null) return windows;
+  }
   if (platform() !== "linux") return null;
   try {
     const source = await readFile("/proc/net/dev", { encoding: "utf8", signal });
