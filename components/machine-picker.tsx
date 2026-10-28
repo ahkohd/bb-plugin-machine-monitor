@@ -5,20 +5,45 @@ import { SERVER_MACHINE } from "../hooks/use-server-snapshot";
 import { machineKey } from "../hooks/use-machines";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { CubeIcon, LaptopIcon, ServerIcon } from "@hugeicons/core-free-icons";
 
-const MACHINE_GROUPS: { label: string; includes: (machine: Machine) => boolean }[] = [
-  { label: "Machines", includes: (machine) => !machine.isBox },
-  { label: "Boxes", includes: (machine) => machine.isBox },
-];
+type MachineKind = "server" | "machine" | "box";
+
+const KIND_ICONS = { server: ServerIcon, machine: LaptopIcon, box: CubeIcon } as const;
+
+const KIND_LABELS: Record<MachineKind, string> = {
+  server: "bb server",
+  machine: "Machine",
+  box: "Box",
+};
+
+function kindOf(machine: Machine): MachineKind {
+  if (machine.isServer) return "server";
+  return machine.isBox ? "box" : "machine";
+}
+
+function KindIcon({ kind, className }: { kind: MachineKind; className?: string }) {
+  return (
+    <HugeiconsIcon
+      icon={KIND_ICONS[kind]}
+      className={cn("size-3.5 shrink-0", className)}
+      aria-label={KIND_LABELS[kind]}
+      role="img"
+    />
+  );
+}
 
 function matchesQuery(machine: Machine, query: string): boolean {
   return machine.name.toLowerCase().includes(query.trim().toLowerCase());
 }
 
-function displayName(machines: Machine[] | null, selected: string): string {
+function selectedMachine(machines: Machine[] | null, selected: string): { name: string; kind: MachineKind } {
   const machine = machines?.find((candidate) => machineKey(candidate) === selected);
-  if (machine) return machine.name;
-  return selected === SERVER_MACHINE ? "This bb server" : "Machine";
+  if (machine) return { name: machine.name, kind: kindOf(machine) };
+  return selected === SERVER_MACHINE
+    ? { name: "This bb server", kind: "server" }
+    : { name: "Machine", kind: "machine" };
 }
 
 export function MachinePicker({
@@ -37,17 +62,11 @@ export function MachinePicker({
   const [highlighted, setHighlighted] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
 
-  const groups = useMemo(
-    () =>
-      MACHINE_GROUPS.map(({ label, includes }) => ({
-        label,
-        machines: (machines ?? []).filter(
-          (machine) => includes(machine) && matchesQuery(machine, query),
-        ),
-      })).filter((group) => group.machines.length > 0),
+  const flat = useMemo(
+    () => (machines ?? []).filter((machine) => matchesQuery(machine, query)),
     [machines, query],
   );
-  const flat = groups.flatMap((group) => group.machines);
+  const current = selectedMachine(machines, selected);
 
   const choose = (machine: Machine) => {
     onSelect(machineKey(machine));
@@ -76,7 +95,6 @@ export function MachinePicker({
     }
   };
 
-  let index = -1;
   return (
     <Popover
       open={open}
@@ -93,7 +111,8 @@ export function MachinePicker({
         aria-label="Machine"
         className="flex h-6 min-w-0 max-w-full shrink items-center gap-1 rounded-md px-1.5 text-xs font-medium text-sidebar-foreground hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring disabled:opacity-50 data-[state=open]:bg-sidebar-accent"
       >
-        <span className="min-w-0 truncate">{displayName(machines, selected)}</span>
+        <KindIcon kind={current.kind} className="text-muted-foreground" />
+        <span className="min-w-0 truncate">{current.name}</span>
         <Icon name="ChevronDown" className="size-4 shrink-0 text-muted-foreground" aria-hidden />
       </PopoverTrigger>
       <PopoverContent className="w-60 p-0" side="bottom">
@@ -124,35 +143,28 @@ export function MachinePicker({
           ) : flat.length === 0 ? (
             <p className="px-2 py-1.5 text-xs text-muted-foreground">No machines match.</p>
           ) : (
-            groups.map((group) => (
-              <div key={group.label} role="group" aria-label={group.label}>
-                <p className="px-2 pb-1 pt-1.5 text-2xs font-medium text-muted-foreground">{group.label}</p>
-                {group.machines.map((machine) => {
-                  index += 1;
-                  const itemIndex = index;
-                  const isSelected = machineKey(machine) === selected;
-                  return (
-                    <button
-                      key={machine.id}
-                      type="button"
-                      role="option"
-                      aria-selected={isSelected}
-                      data-machine-index={itemIndex}
-                      onMouseMove={() => setHighlighted(itemIndex)}
-                      onClick={() => choose(machine)}
-                      className={cn(
-                        "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs text-foreground outline-none",
-                        itemIndex === highlighted && "bg-state-hover",
-                      )}
-                    >
-                      <span className="min-w-0 flex-1 truncate">{machine.name}</span>
-                      {machine.isServer ? <span className="shrink-0 text-2xs text-muted-foreground">server</span> : null}
-                      {isSelected ? <Icon name="Check" className="size-3.5 shrink-0" aria-hidden /> : null}
-                    </button>
-                  );
-                })}
-              </div>
-            ))
+            flat.map((machine, itemIndex) => {
+              const isSelected = machineKey(machine) === selected;
+              return (
+                <button
+                  key={machine.id}
+                  type="button"
+                  role="option"
+                  aria-selected={isSelected}
+                  data-machine-index={itemIndex}
+                  onMouseMove={() => setHighlighted(itemIndex)}
+                  onClick={() => choose(machine)}
+                  className={cn(
+                    "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs text-foreground outline-none",
+                    itemIndex === highlighted && "bg-state-hover",
+                  )}
+                >
+                  <KindIcon kind={kindOf(machine)} className="text-muted-foreground" />
+                  <span className="min-w-0 flex-1 truncate">{machine.name}</span>
+                  {isSelected ? <Icon name="Check" className="size-3.5 shrink-0" aria-hidden /> : null}
+                </button>
+              );
+            })
           )}
         </div>
       </PopoverContent>
