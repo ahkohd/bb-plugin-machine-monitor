@@ -5,7 +5,7 @@ import { SERVER_MACHINE, useServerSnapshot } from "./hooks/use-server-snapshot";
 import { machineKey, useMachines } from "./hooks/use-machines";
 import { PressureNotifications, bindStatusOpener } from "./components/pressure-notifications";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const GREEN = "#22c55e";
@@ -181,6 +181,11 @@ function LoadingPopover() {
   );
 }
 
+const MACHINE_GROUPS: { label: string; includes: (machine: Machine) => boolean }[] = [
+  { label: "Machines", includes: (machine) => !machine.isBox },
+  { label: "Boxes", includes: (machine) => machine.isBox },
+];
+
 function MachinePicker({ machines, selected, onSelect }: { machines: Machine[] | null; selected: string; onSelect: (machineId: string) => void }) {
   const options = machines ?? [];
   const known = options.some((machine) => machineKey(machine) === selected);
@@ -192,12 +197,21 @@ function MachinePicker({ machines, selected, onSelect }: { machines: Machine[] |
         </SelectTrigger>
         <SelectContent>
           {known ? null : <SelectItem value={SERVER_MACHINE} className="text-xs">This bb server</SelectItem>}
-          {options.map((machine) => (
-            <SelectItem key={machine.id} value={machineKey(machine)} disabled={!machine.connected} className="text-xs">
-              {machine.name}
-              {machine.isServer ? " · server" : machine.connected ? "" : " · offline"}
-            </SelectItem>
-          ))}
+          {MACHINE_GROUPS.map(({ label, includes }) => {
+            const group = options.filter(includes);
+            if (group.length === 0) return null;
+            return (
+              <SelectGroup key={label}>
+                <SelectLabel>{label}</SelectLabel>
+                {group.map((machine) => (
+                  <SelectItem key={machine.id} value={machineKey(machine)} disabled={!machine.connected} className="text-xs">
+                    {machine.name}
+                    {machine.isServer ? " · server" : ""}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            );
+          })}
         </SelectContent>
       </Select>
     </div>

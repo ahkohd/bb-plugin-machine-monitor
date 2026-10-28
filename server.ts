@@ -26,6 +26,7 @@ const machineSchema = z.object({
   name: z.string(),
   connected: z.boolean(),
   isServer: z.boolean(),
+  isBox: z.boolean(),
 });
 
 export type Machine = z.infer<typeof machineSchema>;
@@ -120,10 +121,13 @@ export default async function plugin(bb: BbPluginApi) {
         name: host.name,
         connected: host.status === "connected",
         isServer: host.id === serverHostId,
+        isBox: host.machineProviderId !== null,
       }))
+      .filter((machine) => machine.connected || machine.isServer)
       .sort(
         (left, right) =>
           Number(right.isServer) - Number(left.isServer) ||
+          Number(left.isBox) - Number(right.isBox) ||
           left.name.localeCompare(right.name),
       );
   };
