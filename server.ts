@@ -43,6 +43,11 @@ export const rpcContract = defineRpcContract({
 });
 
 const MACHINE_TIMEOUT_MS = 8000;
+const SELF_ENROLLED_PROVIDERS: ReadonlySet<string> = new Set(["manual"]);
+
+function isBoxProvider(machineProviderId: string | null): boolean {
+  return machineProviderId !== null && !SELF_ENROLLED_PROVIDERS.has(machineProviderId);
+}
 
 export default async function plugin(bb: BbPluginApi) {
   const settings = bb.settings.define({
@@ -121,7 +126,7 @@ export default async function plugin(bb: BbPluginApi) {
         name: host.name,
         connected: host.status === "connected",
         isServer: host.id === serverHostId,
-        isBox: host.machineProviderId !== null,
+        isBox: isBoxProvider(host.machineProviderId),
       }))
       .filter((machine) => machine.connected || machine.isServer)
       .sort(
