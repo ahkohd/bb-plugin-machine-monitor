@@ -43,7 +43,6 @@ export const rpcContract = defineRpcContract({
   monitor_status: { input: z.null(), output: z.object({ enabled: z.boolean(), notifications: z.boolean(), cursor: z.number(), active: z.array(z.object({ sequence: z.number(), type: z.enum(["incident", "recovery"]), metric: z.enum(["cpu", "memory"]), timestamp: z.number(), value: z.number(), peak: z.number(), durationSeconds: z.number(), threshold: z.number() })).max(2), recent: z.array(z.object({ sequence: z.number(), type: z.enum(["incident", "recovery"]), metric: z.enum(["cpu", "memory"]), timestamp: z.number(), value: z.number(), peak: z.number(), durationSeconds: z.number(), threshold: z.number() })).max(32) }) },
 });
 
-const MACHINE_TIMEOUT_MS = 8000;
 const SELF_ENROLLED_PROVIDERS: ReadonlySet<string> = new Set(["manual"]);
 
 function isBoxProvider(machineProviderId: string | null): boolean {
@@ -157,7 +156,7 @@ export default async function plugin(bb: BbPluginApi) {
     return hostClient.call(
       "machine_snapshot",
       { refreshIntervalMs, force },
-      { hostId, timeoutMs: MACHINE_TIMEOUT_MS },
+      { hostId },
     );
   };
 

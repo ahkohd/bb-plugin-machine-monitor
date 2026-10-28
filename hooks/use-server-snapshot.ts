@@ -10,11 +10,15 @@ type SnapshotSource = ReturnType<typeof createSnapshotSource<ServerSnapshot>>;
 // Survives disclosure remounts without timers and is released with the bundle.
 const sources = new Map<string, SnapshotSource>();
 
+const MAX_REMEMBERED_MACHINES = 8;
+
 function sourceFor(machineKey: string): SnapshotSource {
-  let source = sources.get(machineKey);
-  if (!source) {
-    source = createSnapshotSource<ServerSnapshot>((value) => value.refreshIntervalMs);
-    sources.set(machineKey, source);
+  const source = sources.get(machineKey) ?? createSnapshotSource<ServerSnapshot>((value) => value.refreshIntervalMs);
+  sources.delete(machineKey);
+  sources.set(machineKey, source);
+  for (const oldest of sources.keys()) {
+    if (sources.size <= MAX_REMEMBERED_MACHINES) break;
+    sources.delete(oldest);
   }
   return source;
 }

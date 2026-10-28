@@ -16,7 +16,7 @@ export default experimental_defineHostEntry({
   handlers: {
     machine_snapshot: async ({ refreshIntervalMs: requested, force }) => {
       refreshIntervalMs = requested;
-      return sampler.sample(force);
+      return { ...(await sampler.sample(force)), refreshIntervalMs };
     },
   },
   dispose: () => sampler.dispose(),

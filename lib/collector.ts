@@ -153,14 +153,14 @@ async function readNetworkTotals(signal: AbortSignal): Promise<NetworkTotals | n
   }
 }
 
-export function parseProcesses(source: string): Processes {
+export function parseProcesses(source: string, nameOf: (command: string) => string = (command) => command): Processes {
   const rows = source.split("\n").flatMap((line) => {
     // comm comes last: executable names may contain whitespace. Never read cmdline.
     const match = /^\s*(\d+)\s+([\d.]+)\s+([\d.]+)\s+(\d+)\s+(\S+)\s+(.+?)\s*$/.exec(line);
     if (!match || match[6] === "ps") return [];
     const [pid, cpuPercent, memoryPercent, rssKiB] = match.slice(1, 5).map(Number);
     if (!Number.isSafeInteger(pid) || pid <= 0 || ![cpuPercent, memoryPercent, rssKiB * 1024].every(Number.isFinite)) return [];
-    return [{ pid, name: match[6].slice(0, 128), cpuPercent, memoryPercent, rssBytes: rssKiB * 1024, running: match[5].startsWith("R") }];
+    return [{ pid, name: nameOf(match[6]).slice(0, 128), cpuPercent, memoryPercent, rssBytes: rssKiB * 1024, running: match[5].startsWith("R") }];
   });
   return {
     available: true,
@@ -177,10 +177,8 @@ async function readProcesses(signal: AbortSignal): Promise<Processes> {
       ["-eo", "pid=,%cpu=,%mem=,rss=,stat=,comm="],
       { timeout: 1500, maxBuffer: 512 * 1024, signal, env: { ...process.env, LC_ALL: "C" } },
     );
-    const processes = parseProcesses(stdout);
-    if (platform() !== "linux") {
-      for (const entry of processes.top) entry.name = basename(entry.name).slice(0, 128);
-    } else {
+    const processes = parseProcesses(stdout, platform() === "linux" ? undefined : basename);
+    if (platform() === "linux") {
       // Node can rename comm to MainThread. Resolve six symlinks, not command-line
       // contents (which can be large or include credentials and arguments).
       await Promise.all(processes.top.map(async (entry) => {

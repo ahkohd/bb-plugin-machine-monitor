@@ -83,7 +83,8 @@ async function readStatusOnce(signal: AbortSignal): Promise<TailscaleInfo | null
         signal,
         windowsHide: true,
       });
-      return parseTailscaleStatus(stdout);
+      const status = parseTailscaleStatus(stdout);
+      if (status !== null) return status;
     } catch (error) {
       if (signal.aborted) throw error;
     }
