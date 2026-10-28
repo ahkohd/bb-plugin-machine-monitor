@@ -25,7 +25,7 @@ extern int64_t IOReportSimpleGetIntegerValue(CFDictionaryRef channel, int32_t in
 extern CFStringRef IOReportChannelGetChannelName(CFDictionaryRef channel);
 extern CFStringRef IOReportChannelGetUnitLabel(CFDictionaryRef channel);
 
-enum { TEMPERATURE_EVENT = 15, SAMPLE_MS = 250 };
+enum { TEMPERATURE_EVENT = 15, MIN_SAMPLE_MS = 250, MAX_KEYS = 256 };
 
 typedef struct { char major, minor, build, reserved; uint16_t release; } SmcVersion;
 typedef struct { uint16_t version, length; uint32_t cpuLimit, gpuLimit, memoryLimit; } SmcLimits;
@@ -71,47 +71,6 @@ static int smc_read(io_connect_t connection, uint32_t key, SmcKeyInfo info, unsi
   return 1;
 }
 
-static void read_smc_temperatures(int dump, double *cpu, double *gpu) {
-  io_service_t service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSMC"));
-  if (!service) return;
-  io_connect_t connection;
-  kern_return_t opened = IOServiceOpen(service, mach_task_self(), 0, &connection);
-  IOObjectRelease(service);
-  if (opened != KERN_SUCCESS) return;
-  SmcKeyInfo countInfo;
-  unsigned char bytes[32];
-  uint32_t keyCount = 0;
-  if (smc_key_info(connection, four_char_code("#KEY"), &countInfo) && smc_read(connection, four_char_code("#KEY"), countInfo, bytes)) {
-    keyCount = ((uint32_t)bytes[0] << 24) | ((uint32_t)bytes[1] << 16) | ((uint32_t)bytes[2] << 8) | bytes[3];
-  }
-  double cpuSum = 0, gpuSum = 0;
-  int cpuCount = 0, gpuCount = 0;
-  for (uint32_t index = 0; index < keyCount; index++) {
-    SmcCall input = {0}, output;
-    input.data8 = SMC_KEY_AT_INDEX;
-    input.data32 = index;
-    if (!smc_call(connection, &input, &output)) continue;
-    uint32_t key = output.key;
-    char name[5] = { (char)(key >> 24), (char)(key >> 16), (char)(key >> 8), (char)key, 0 };
-    if (name[0] != 'T') continue;
-    int isCpu = name[1] == 'p' || name[1] == 'e';
-    int isGpu = name[1] == 'g';
-    if (!isCpu && !isGpu && !dump) continue;
-    SmcKeyInfo info;
-    if (!smc_key_info(connection, key, &info) || info.dataType != four_char_code("flt ") || info.dataSize != 4) continue;
-    if (!smc_read(connection, key, info, bytes)) continue;
-    float celsius;
-    memcpy(&celsius, bytes, sizeof celsius);
-    if (dump) printf("smc\t%s\t%.2f\n", name, celsius);
-    if (!(celsius > 0 && celsius <= 150) || celsius == (float)(int)celsius) continue;
-    if (isCpu) { cpuSum += celsius; cpuCount++; }
-    if (isGpu) { gpuSum += celsius; gpuCount++; }
-  }
-  IOServiceClose(connection);
-  if (cpuCount) *cpu = cpuSum / cpuCount;
-  if (gpuCount) *gpu = gpuSum / gpuCount;
-}
-
 static int name_has(const char *name, const char *needle) {
   return strstr(name, needle) != NULL;
 }
@@ -125,7 +84,7 @@ static int number_dictionary_entry(CFMutableDictionaryRef dictionary, const char
   return 0;
 }
 
-static void read_temperatures(int dump, double *cpu, double *gpu) {
+static void read_hid_temperatures(double *cpu, double *gpu) {
   double cpuSum = 0, gpuSum = 0;
   int cpuCount = 0, gpuCount = 0;
   IOHIDEventSystemClientRef client = IOHIDEventSystemClientCreate(kCFAllocatorDefault);
@@ -148,7 +107,6 @@ static void read_temperatures(int dump, double *cpu, double *gpu) {
       if (!event) continue;
       double celsius = IOHIDEventGetFloatValue(event, TEMPERATURE_EVENT << 16);
       CFRelease(event);
-      if (dump) printf("sensor\t%s\t%.2f\n", name, celsius);
       if (!(celsius > 0 && celsius <= 150)) continue;
       if (name_has(name, "tdie") || name_has(name, "pACC") || name_has(name, "eACC")) {
         cpuSum += celsius;
@@ -175,28 +133,92 @@ static double joules(int64_t value, CFStringRef unit) {
   return -1;
 }
 
-static void read_power(int dump, double *cpu, double *gpu) {
-  CFDictionaryRef channels = IOReportCopyChannelsInGroup(CFSTR("Energy Model"), NULL, 0, 0, 0);
-  if (!channels) return;
-  CFMutableDictionaryRef mutableChannels = CFDictionaryCreateMutableCopy(NULL, 0, channels);
-  CFMutableDictionaryRef subscribed = NULL;
-  IOReportSubscriptionRef subscription = IOReportCreateSubscription(NULL, mutableChannels, &subscribed, 0, NULL);
-  if (!subscription || !subscribed) {
-    CFRelease(mutableChannels);
-    CFRelease(channels);
-    return;
+typedef struct {
+  io_connect_t smc;
+  uint32_t keys[MAX_KEYS];
+  int keyCount;
+  CFDictionaryRef channels;
+  CFMutableDictionaryRef mutableChannels;
+  CFMutableDictionaryRef subscribed;
+  IOReportSubscriptionRef subscription;
+  CFDictionaryRef previous;
+  uint64_t previousAt;
+} Sampler;
+
+static int is_temperature_key(uint32_t key) {
+  char kind = (char)(key >> 16);
+  return (char)(key >> 24) == 'T' && (kind == 'p' || kind == 'e' || kind == 'g');
+}
+
+static void find_temperature_keys(Sampler *sampler) {
+  SmcKeyInfo countInfo;
+  unsigned char bytes[32];
+  uint32_t total = 0;
+  if (smc_key_info(sampler->smc, four_char_code("#KEY"), &countInfo) && smc_read(sampler->smc, four_char_code("#KEY"), countInfo, bytes)) {
+    total = ((uint32_t)bytes[0] << 24) | ((uint32_t)bytes[1] << 16) | ((uint32_t)bytes[2] << 8) | bytes[3];
   }
-  uint64_t startedAt = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
-  CFDictionaryRef first = IOReportCreateSamples(subscription, subscribed, NULL);
-  usleep(SAMPLE_MS * 1000);
-  CFDictionaryRef second = IOReportCreateSamples(subscription, subscribed, NULL);
-  double seconds = (clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - startedAt) / 1e9;
-  CFArrayRef before = first ? CFDictionaryGetValue(first, CFSTR("IOReportChannels")) : NULL;
-  CFArrayRef after = second ? CFDictionaryGetValue(second, CFSTR("IOReportChannels")) : NULL;
+  for (uint32_t index = 0; index < total && sampler->keyCount < MAX_KEYS; index++) {
+    SmcCall input = {0}, output;
+    input.data8 = SMC_KEY_AT_INDEX;
+    input.data32 = index;
+    if (smc_call(sampler->smc, &input, &output) && is_temperature_key(output.key)) sampler->keys[sampler->keyCount++] = output.key;
+  }
+}
+
+static void open_smc(Sampler *sampler) {
+  io_service_t service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSMC"));
+  if (!service) return;
+  if (IOServiceOpen(service, mach_task_self(), 0, &sampler->smc) != KERN_SUCCESS) sampler->smc = 0;
+  IOObjectRelease(service);
+  if (sampler->smc) find_temperature_keys(sampler);
+}
+
+static void read_smc_temperatures(Sampler *sampler, double *cpu, double *gpu) {
+  double cpuSum = 0, gpuSum = 0;
+  int cpuCount = 0, gpuCount = 0;
+  for (int index = 0; index < sampler->keyCount; index++) {
+    uint32_t key = sampler->keys[index];
+    SmcKeyInfo info;
+    unsigned char bytes[32];
+    if (!smc_key_info(sampler->smc, key, &info) || info.dataType != four_char_code("flt ") || info.dataSize != 4) continue;
+    if (!smc_read(sampler->smc, key, info, bytes)) continue;
+    float celsius;
+    memcpy(&celsius, bytes, sizeof celsius);
+    if (!(celsius > 0 && celsius <= 150) || celsius == (float)(int)celsius) continue;
+    if ((char)(key >> 16) == 'g') { gpuSum += celsius; gpuCount++; }
+    else { cpuSum += celsius; cpuCount++; }
+  }
+  if (cpuCount) *cpu = cpuSum / cpuCount;
+  if (gpuCount) *gpu = gpuSum / gpuCount;
+}
+
+static uint64_t now_ns(void) {
+  return clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+}
+
+static void open_energy(Sampler *sampler) {
+  sampler->channels = IOReportCopyChannelsInGroup(CFSTR("Energy Model"), NULL, 0, 0, 0);
+  if (!sampler->channels) return;
+  sampler->mutableChannels = CFDictionaryCreateMutableCopy(NULL, 0, sampler->channels);
+  sampler->subscription = IOReportCreateSubscription(NULL, sampler->mutableChannels, &sampler->subscribed, 0, NULL);
+  if (!sampler->subscription || !sampler->subscribed) return;
+  sampler->previous = IOReportCreateSamples(sampler->subscription, sampler->subscribed, NULL);
+  sampler->previousAt = now_ns();
+}
+
+static void read_power(Sampler *sampler, double *cpu, double *gpu) {
+  if (!sampler->previous) return;
+  uint64_t elapsedMs = (now_ns() - sampler->previousAt) / 1000000;
+  if (elapsedMs < MIN_SAMPLE_MS) usleep((useconds_t)((MIN_SAMPLE_MS - elapsedMs) * 1000));
+  CFDictionaryRef current = IOReportCreateSamples(sampler->subscription, sampler->subscribed, NULL);
+  uint64_t currentAt = now_ns();
+  if (!current) return;
+  double seconds = (currentAt - sampler->previousAt) / 1e9;
+  CFArrayRef before = CFDictionaryGetValue(sampler->previous, CFSTR("IOReportChannels"));
+  CFArrayRef after = CFDictionaryGetValue(current, CFSTR("IOReportChannels"));
+  CFIndex count = before && after && CFArrayGetCount(before) == CFArrayGetCount(after) ? CFArrayGetCount(after) : 0;
   double cpuJoules = 0, gpuJoules = 0, gpuFallbackJoules = 0;
   int cpuSeen = 0, gpuSeen = 0, gpuFallbackSeen = 0;
-  CFIndex count = before && after ? CFArrayGetCount(before) : 0;
-  if (after && CFArrayGetCount(after) != count) count = 0;
   for (CFIndex index = 0; index < count; index++) {
     CFDictionaryRef start = CFArrayGetValueAtIndex(before, index);
     CFDictionaryRef end = CFArrayGetValueAtIndex(after, index);
@@ -204,7 +226,6 @@ static void read_power(int dump, double *cpu, double *gpu) {
     CFStringRef channelName = IOReportChannelGetChannelName(end);
     if (channelName) CFStringGetCString(channelName, name, sizeof name, kCFStringEncodingUTF8);
     double energy = joules(IOReportSimpleGetIntegerValue(end, 0) - IOReportSimpleGetIntegerValue(start, 0), IOReportChannelGetUnitLabel(end));
-    if (dump) printf("energy\t%s\t%.4f J\n", name, energy);
     if (energy < 0) continue;
     if (strcmp(name, "GPU Energy") == 0) {
       gpuJoules += energy;
@@ -223,30 +244,59 @@ static void read_power(int dump, double *cpu, double *gpu) {
   }
   if (cpuSeen && seconds > 0) *cpu = cpuJoules / seconds;
   if (gpuSeen && seconds > 0) *gpu = gpuJoules / seconds;
-  if (second) CFRelease(second);
-  if (first) CFRelease(first);
-  CFRelease(subscribed);
-  CFRelease(mutableChannels);
-  CFRelease(channels);
+  CFRelease(sampler->previous);
+  sampler->previous = current;
+  sampler->previousAt = currentAt;
 }
 
-static void print_number(const char *key, double value, int last) {
-  if (!isfinite(value) || value < 0) printf("\"%s\":null%s", key, last ? "" : ",");
-  else printf("\"%s\":%.2f%s", key, value, last ? "" : ",");
+static double read_gpu_utilization(void) {
+  io_iterator_t accelerators;
+  if (IOServiceGetMatchingServices(kIOMainPortDefault, IOServiceMatching("IOAccelerator"), &accelerators) != KERN_SUCCESS) return -1;
+  double percent = -1;
+  io_object_t accelerator;
+  while ((accelerator = IOIteratorNext(accelerators))) {
+    CFTypeRef statistics = IORegistryEntryCreateCFProperty(accelerator, CFSTR("PerformanceStatistics"), kCFAllocatorDefault, 0);
+    if (statistics && CFGetTypeID(statistics) == CFDictionaryGetTypeID() && percent < 0) {
+      CFTypeRef utilization = CFDictionaryGetValue(statistics, CFSTR("Device Utilization %"));
+      int value;
+      if (utilization && CFGetTypeID(utilization) == CFNumberGetTypeID() && CFNumberGetValue(utilization, kCFNumberIntType, &value)) percent = value;
+    }
+    if (statistics) CFRelease(statistics);
+    IOObjectRelease(accelerator);
+  }
+  IOObjectRelease(accelerators);
+  return percent;
+}
+
+static void print_number(const char *key, double value, const char *separator) {
+  if (!isfinite(value) || value < 0) printf("\"%s\":null%s", key, separator);
+  else printf("\"%s\":%.2f%s", key, value, separator);
+}
+
+static void print_reading(Sampler *sampler) {
+  double cpuTemp = -1, gpuTemp = -1, cpuWatts = -1, gpuWatts = -1;
+  if (sampler->smc) read_smc_temperatures(sampler, &cpuTemp, &gpuTemp);
+  if (cpuTemp < 0) read_hid_temperatures(&cpuTemp, &gpuTemp);
+  read_power(sampler, &cpuWatts, &gpuWatts);
+  printf("{");
+  print_number("cpuTempC", cpuTemp, ",");
+  print_number("gpuTempC", gpuTemp, ",");
+  print_number("cpuWatts", cpuWatts, ",");
+  print_number("gpuWatts", gpuWatts, ",");
+  print_number("gpuPercent", read_gpu_utilization(), "");
+  printf("}\n");
+  fflush(stdout);
 }
 
 int main(int argc, char **argv) {
-  int dump = argc > 1 && strcmp(argv[1], "--dump") == 0;
-  double cpuTemp = -1, gpuTemp = -1, cpuWatts = -1, gpuWatts = -1;
-  read_smc_temperatures(dump, &cpuTemp, &gpuTemp);
-  if (cpuTemp < 0) read_temperatures(dump, &cpuTemp, &gpuTemp);
-  read_power(dump, &cpuWatts, &gpuWatts);
-  if (dump) return 0;
-  printf("{");
-  print_number("cpuTempC", cpuTemp, 0);
-  print_number("gpuTempC", gpuTemp, 0);
-  print_number("cpuWatts", cpuWatts, 0);
-  print_number("gpuWatts", gpuWatts, 1);
-  printf("}\n");
+  Sampler sampler = {0};
+  open_smc(&sampler);
+  open_energy(&sampler);
+  if (argc > 1 && strcmp(argv[1], "--serve") == 0) {
+    char request[64];
+    while (fgets(request, sizeof request, stdin)) print_reading(&sampler);
+    return 0;
+  }
+  print_reading(&sampler);
   return 0;
 }

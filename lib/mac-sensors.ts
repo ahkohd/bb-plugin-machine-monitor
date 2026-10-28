@@ -1,12 +1,13 @@
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { arch, homedir, platform } from "node:os";
+import type { Socket } from "node:net";
 import { join } from "node:path";
-import { promisify } from "node:util";
+import { createInterface } from "node:readline";
 import { MAC_SENSORS_BINARY, MAC_SENSORS_DIGEST } from "./mac-sensors-binary.ts";
 
-const execFileAsync = promisify(execFile);
+const READING_TIMEOUT_MS = 3000;
 
 export interface MacSensors {
   cpuTempC: number | null;
@@ -25,7 +26,7 @@ function measuredWatts(value: unknown): number | null {
   return watts === null || watts === 0 ? null : watts;
 }
 
-export function parseSensorOutput(source: string): Omit<MacSensors, "gpuPercent"> | null {
+export function parseSensorOutput(source: string): MacSensors | null {
   try {
     const parsed: unknown = JSON.parse(source);
     if (typeof parsed !== "object" || parsed === null) return null;
@@ -35,15 +36,11 @@ export function parseSensorOutput(source: string): Omit<MacSensors, "gpuPercent"
       gpuTempC: finiteOrNull(value.gpuTempC, 150),
       cpuWatts: measuredWatts(value.cpuWatts),
       gpuWatts: measuredWatts(value.gpuWatts),
+      gpuPercent: finiteOrNull(value.gpuPercent, 100),
     };
   } catch {
     return null;
   }
-}
-
-export function parseGpuUtilization(source: string): number | null {
-  const match = /"Device Utilization %"\s*=\s*(\d+)/.exec(source);
-  return match ? finiteOrNull(Number(match[1]), 100) : null;
 }
 
 let helperPath: Promise<string | null> | null = null;
@@ -87,45 +84,76 @@ async function writeHelper(): Promise<string | null> {
   }
 }
 
-function helperWentMissing(error: unknown): boolean {
-  const code = (error as NodeJS.ErrnoException | null)?.code;
-  return code === "ENOENT" || code === "EACCES";
+interface RunningHelper {
+  request(): Promise<string | null>;
+  stop(): void;
 }
 
-async function readHelper(signal: AbortSignal) {
+let runningHelper: RunningHelper | null = null;
+
+function startHelper(path: string): RunningHelper {
+  const child = spawn(path, ["--serve"], { stdio: ["pipe", "pipe", "ignore"] });
+  const waiting: Array<(line: string | null) => void> = [];
+  const finish = () => {
+    if (runningHelper === helper) runningHelper = null;
+    for (const resolve of waiting.splice(0)) resolve(null);
+  };
+  const helper: RunningHelper = {
+    request: () => new Promise((resolve) => {
+      waiting.push(resolve);
+      child.stdin.write("\n");
+    }),
+    stop: () => child.kill(),
+  };
+  createInterface({ input: child.stdout }).on("line", (line) => waiting.shift()?.(line));
+  child.on("exit", finish);
+  child.on("error", (error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT" || error.code === "EACCES") helperPath = null;
+    finish();
+  });
+  child.stdin.on("error", finish);
+  child.unref();
+  (child.stdin as unknown as Socket).unref();
+  (child.stdout as unknown as Socket).unref();
+  return helper;
+}
+
+export function stopMacSensors(): void {
+  runningHelper?.stop();
+  runningHelper = null;
+}
+
+async function helperFor(): Promise<RunningHelper | null> {
+  if (runningHelper) return runningHelper;
   helperPath ??= writeHelper().then((path) => {
     if (path === null) helperPath = null;
     return path;
   });
   const path = await helperPath;
   if (path === null) return null;
+  runningHelper ??= startHelper(path);
+  return runningHelper;
+}
+
+async function readHelper(signal: AbortSignal): Promise<MacSensors | null> {
+  const helper = await helperFor();
+  if (!helper || signal.aborted) return null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = new Promise<null>((resolve) => {
+    timer = setTimeout(() => {
+      helper.stop();
+      resolve(null);
+    }, READING_TIMEOUT_MS);
+  });
   try {
-    const { stdout } = await execFileAsync(path, [], { timeout: 3000, maxBuffer: 64 * 1024, signal });
-    return parseSensorOutput(stdout);
-  } catch (error) {
-    if (helperWentMissing(error)) helperPath = null;
-    return null;
+    const line = await Promise.race([helper.request(), timedOut]);
+    return line === null ? null : parseSensorOutput(line);
+  } finally {
+    clearTimeout(timer);
   }
 }
 
-async function readGpuUtilization(signal: AbortSignal): Promise<number | null> {
-  try {
-    const { stdout } = await execFileAsync("ioreg", ["-r", "-d", "1", "-c", "IOAccelerator"], { timeout: 1500, maxBuffer: 4 * 1024 * 1024, signal });
-    return parseGpuUtilization(stdout);
-  } catch {
-    return null;
-  }
-}
-
-export async function readMacSensors(signal: AbortSignal): Promise<MacSensors | null> {
-  if (platform() !== "darwin" || arch() !== "arm64") return null;
-  const [readings, gpuPercent] = await Promise.all([readHelper(signal), readGpuUtilization(signal)]);
-  if (readings === null && gpuPercent === null) return null;
-  return {
-    cpuTempC: readings?.cpuTempC ?? null,
-    gpuTempC: readings?.gpuTempC ?? null,
-    cpuWatts: readings?.cpuWatts ?? null,
-    gpuWatts: readings?.gpuWatts ?? null,
-    gpuPercent,
-  };
+export function readMacSensors(signal: AbortSignal): Promise<MacSensors | null> {
+  if (platform() !== "darwin" || arch() !== "arm64") return Promise.resolve(null);
+  return readHelper(signal);
 }

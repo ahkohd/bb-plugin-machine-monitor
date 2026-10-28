@@ -12,6 +12,7 @@ import {
   type CpuTimes,
 } from "./lib/collector.ts";
 import { createDemandSampler } from "./lib/demand-sampler.ts";
+import { stopMacSensors } from "./lib/mac-sensors.ts";
 import { createPressureMonitor } from "./lib/pressure-monitor.ts";
 import { PRESSURE_CHANNEL } from "./lib/pressure.ts";
 
@@ -230,5 +231,5 @@ export default async function plugin(bb: BbPluginApi) {
   });
 
   bb.log.info("Beacon loaded");
-  bb.onDispose(() => { monitor.dispose(); sampler.dispose(); bb.log.info("Beacon disposed"); });
+  bb.onDispose(() => { monitor.dispose(); sampler.dispose(); stopMacSensors(); bb.log.info("Beacon disposed"); });
 }

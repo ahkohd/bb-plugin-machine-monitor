@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { parseLinuxBattery, parseMacBattery } from "../lib/battery.ts";
-import { parseGpuUtilization, parseSensorOutput } from "../lib/mac-sensors.ts";
+import { parseSensorOutput } from "../lib/mac-sensors.ts";
 
 const macIoreg = [
   '      "CurrentCapacity" = 23',
@@ -90,20 +90,18 @@ test("a desktop Mac's empty battery record is no battery", () => {
 });
 
 test("reads the sensor helper's output and rejects nonsense", () => {
-  assert.deepEqual(parseSensorOutput('{"cpuTempC":51.76,"gpuTempC":45.68,"cpuWatts":1.10,"gpuWatts":null}'), {
+  assert.deepEqual(parseSensorOutput('{"cpuTempC":51.76,"gpuTempC":45.68,"cpuWatts":1.10,"gpuWatts":null,"gpuPercent":41.00}'), {
     cpuTempC: 51.76,
     gpuTempC: 45.68,
     cpuWatts: 1.1,
     gpuWatts: null,
+    gpuPercent: 41,
   });
+  assert.equal(parseSensorOutput('{"gpuPercent":140}').gpuPercent, null);
   assert.equal(parseSensorOutput("Killed: 9"), null);
   assert.equal(parseSensorOutput('{"cpuTempC":999}').cpuTempC, null);
 });
 
-test("reads GPU utilisation from ioreg", () => {
-  assert.equal(parseGpuUtilization('"PerformanceStatistics" = {"Tiler Utilization %"=16,"Renderer Utilization %"=38,"Device Utilization %"=41}'), 41);
-  assert.equal(parseGpuUtilization("no accelerator"), null);
-});
 
 test("the embedded helper matches its recorded digest", async () => {
   const { MAC_SENSORS_BINARY, MAC_SENSORS_DIGEST } = await import("../lib/mac-sensors-binary.ts");

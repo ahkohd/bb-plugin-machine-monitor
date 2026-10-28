@@ -315,8 +315,8 @@ function NetworkSection({ snapshot }: { snapshot: ServerSnapshot | null }) {
       details={network ? <>
         <DetailRow label="Download" value={formatRate(network.rxBytesPerSecond)} />
         <DetailRow label="Upload" value={formatRate(network.txBytesPerSecond)} />
-        <DetailRow label="Received" value={formatBytes(network.rxTotalBytes)} />
-        <DetailRow label="Sent" value={formatBytes(network.txTotalBytes)} />
+        {network.rxTotalBytes !== null ? <DetailRow label="Received" value={formatBytes(network.rxTotalBytes)} /> : null}
+        {network.txTotalBytes !== null ? <DetailRow label="Sent" value={formatBytes(network.txTotalBytes)} /> : null}
       </> : undefined}
     >
       <BigValue value={down ? down.value : null} unit={down ? `${down.unit}/s down` : undefined} loading={!network} />

@@ -322,7 +322,10 @@ export function createCollector(refreshIntervalMs: () => number) {
     const slowReadings = Promise.all([
       readMemoryDetails(signal), readDisk(), readProcesses(signal), readTailscale(signal), readBattery(signal), readMacSensors(signal),
     ]);
-    if (previousCpuTimes === null) await Promise.all([takeBaseline(signal), slowReadings]);
+    if (previousCpuTimes === null) {
+      await slowReadings;
+      await takeBaseline(signal);
+    }
     const cpuList = cpus();
     const cpuTimes = readCpuTimes(cpuList);
     const perCoreTimes = cpuList.map(cpuTimesFor);
@@ -352,8 +355,8 @@ export function createCollector(refreshIntervalMs: () => number) {
     const network = networkTotals === null ? null : {
       interface: networkTotals.interface,
       ...calculateNetworkRates(previousNetworkTotals, networkTotals, elapsedSeconds),
-      rxTotalBytes: networkTotals.rxBytes,
-      txTotalBytes: networkTotals.txBytes,
+      rxTotalBytes: networkTotals.wrapsAt ? null : networkTotals.rxBytes,
+      txTotalBytes: networkTotals.wrapsAt ? null : networkTotals.txBytes,
     };
     previousNetworkTotals = networkTotals;
     previousNetworkTimestamp = networkTimestamp;
