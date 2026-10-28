@@ -130,6 +130,7 @@ export function Pill({ children, tone = "neutral", loading = false }: { children
   return (
     <span
       aria-hidden={loading || undefined}
+      data-reveal={loading ? undefined : ""}
       className={cn(
         "inline-flex h-5 shrink-0 items-center gap-1 rounded-md bg-sidebar-accent px-1.5 text-2xs tabular-nums text-subtle-foreground",
         tone === "warn" && "text-[#eab308]",
@@ -145,7 +146,7 @@ export function Pill({ children, tone = "neutral", loading = false }: { children
 export function BigValue({ value, unit }: { value: ReactNode | null; unit?: string }) {
   const measuring = value === null;
   return (
-    <p className="flex items-baseline gap-1 leading-none" aria-label={measuring ? "Measuring" : undefined}>
+    <p className="flex items-baseline gap-1 leading-none" aria-label={measuring ? "Measuring" : undefined} data-reveal={measuring ? undefined : ""}>
       <span className="text-2xl font-semibold tabular-nums tracking-tight text-sidebar-foreground">
         {measuring ? <LoadingText sample="00" /> : value}
       </span>
@@ -204,5 +205,5 @@ export function DetailRow({ label, value }: { label: string; value: ReactNode })
 }
 
 export function Footnote({ children }: { children: ReactNode }) {
-  return <p className="truncate text-xs text-subtle-foreground">{children}</p>;
+  return <p className="truncate text-xs text-subtle-foreground" data-reveal="">{children}</p>;
 }

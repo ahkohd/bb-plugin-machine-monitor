@@ -47,7 +47,7 @@ function CopyValue({ label, value, title }: { label: string; value: string; titl
               )}
               aria-hidden
             />
-            <span className="min-w-0 truncate tabular-nums">{value}</span>
+            <span className="min-w-0 truncate tabular-nums" data-reveal="">{value}</span>
           </button>
         </TooltipTrigger>
         <TooltipContent side="top">{tooltip}</TooltipContent>

@@ -2,6 +2,7 @@ import { useEffect, useMemo, type ReactNode } from "react";
 import { definePluginApp, experimental_Icon as Icon, type ExperimentalSidebarFooterDisclosureProps } from "@get-bb/plugin-sdk/app";
 import type { Machine, ServerSnapshot } from "./server";
 import { SERVER_MACHINE, useServerSnapshot } from "./hooks/use-server-snapshot";
+import { useRevealOnLoad } from "./hooks/use-reveal-on-load";
 import { machineKey, useMachines } from "./hooks/use-machines";
 import { PressureNotifications, bindStatusOpener } from "./components/pressure-notifications";
 import { MachinePicker, selectedMachine } from "./components/machine-picker";
@@ -429,12 +430,12 @@ function ProcessRows({ snapshot }: { snapshot: ServerSnapshot | null }) {
     <div key={process.pid} className="contents">
       <Tooltip delayDuration={400}>
         <TooltipTrigger asChild>
-          <span className="min-w-0 truncate text-sidebar-foreground">{process.name}</span>
+          <span className="min-w-0 truncate text-sidebar-foreground" data-reveal="">{process.name}</span>
         </TooltipTrigger>
         <TooltipContent side="right" className="text-xs">{process.name} · PID {process.pid}</TooltipContent>
       </Tooltip>
-      <span className="text-right tabular-nums text-subtle-foreground" style={{ color: shareColor(memory.totalBytes > 0 ? process.rssBytes / memory.totalBytes : 0, 0.25, 0.5) }}>{formatBytes(process.rssBytes)}</span>
-      <span className="text-right tabular-nums text-subtle-foreground" style={{ color: shareColor(process.cpuPercent, 50, 100) }}>{process.cpuPercent.toFixed(1)}</span>
+      <span className="text-right tabular-nums text-subtle-foreground" data-reveal="" style={{ color: shareColor(memory.totalBytes > 0 ? process.rssBytes / memory.totalBytes : 0, 0.25, 0.5) }}>{formatBytes(process.rssBytes)}</span>
+      <span className="text-right tabular-nums text-subtle-foreground" data-reveal="" style={{ color: shareColor(process.cpuPercent, 50, 100) }}>{process.cpuPercent.toFixed(1)}</span>
     </div>
   ));
 }
@@ -520,6 +521,7 @@ function StatusDisclosure({ dismiss }: ExperimentalSidebarFooterDisclosureProps)
   const { machines, selected, setSelected, refresh: refreshMachines } = useMachines();
   const { container, active, snapshot, error, reload, reloading } = useServerSnapshot(selected);
   const errorMessage = error ? loadErrorCopy(error, selectedMachine(machines, selected).name) : "";
+  useRevealOnLoad(container, snapshot !== null);
   const expectedShape = useMemo(() => readPanelShape(selected), [selected]);
   const loadedGpu = snapshot ? hasGpuReadings(snapshot) : null;
   const loadedBattery = snapshot ? Boolean(snapshot.battery) : null;
