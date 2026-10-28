@@ -139,6 +139,7 @@ function TemperaturePill({ celsius }: { celsius: number }) {
 
 function formatWatts(watts: number | null | undefined): string | null {
   if (watts === null || watts === undefined) return null;
+  if (watts < 0.1) return "<0.1W";
   return `${watts < 10 ? watts.toFixed(1) : Math.round(watts)}W`;
 }
 

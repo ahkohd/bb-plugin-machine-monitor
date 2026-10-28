@@ -4,7 +4,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
-#include <unistd.h>
 
 typedef struct __IOHIDEventSystemClient *IOHIDEventSystemClientRef;
 typedef struct __IOHIDServiceClient *IOHIDServiceClientRef;
@@ -208,8 +207,7 @@ static void open_energy(Sampler *sampler) {
 
 static void read_power(Sampler *sampler, double *cpu, double *gpu) {
   if (!sampler->previous) return;
-  uint64_t elapsedMs = (now_ns() - sampler->previousAt) / 1000000;
-  if (elapsedMs < MIN_SAMPLE_MS) usleep((useconds_t)((MIN_SAMPLE_MS - elapsedMs) * 1000));
+  if ((now_ns() - sampler->previousAt) / 1000000 < MIN_SAMPLE_MS) return;
   CFDictionaryRef current = IOReportCreateSamples(sampler->subscription, sampler->subscribed, NULL);
   uint64_t currentAt = now_ns();
   if (!current) return;
