@@ -28,7 +28,6 @@ function CopyValue({ label, value, title }: { label: string; value: string; titl
             aria-label={`Copy ${label.toLowerCase()} ${value}`}
             className="group/copy -mr-1 flex min-w-0 items-center gap-1 rounded-md px-1 py-0.5 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
           >
-            <span className="min-w-0 truncate tabular-nums">{value}</span>
             <Icon
               name={state === "copied" ? "Check" : "Copy"}
               className={cn(
@@ -37,6 +36,7 @@ function CopyValue({ label, value, title }: { label: string; value: string; titl
               )}
               aria-hidden
             />
+            <span className="min-w-0 truncate tabular-nums">{value}</span>
           </button>
         </TooltipTrigger>
         <TooltipContent side="top">{tooltip}</TooltipContent>
