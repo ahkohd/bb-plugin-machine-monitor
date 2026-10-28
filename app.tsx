@@ -122,6 +122,15 @@ function SectionIcon({ icon, color }: { icon: Parameters<typeof HugeiconsIcon>[0
   return <HugeiconsIcon icon={icon} className={SECTION_ICON_CLASS} style={{ color }} aria-hidden="true" />;
 }
 
+function temperatureTone(celsius: number): "neutral" | "warn" | "bad" {
+  if (celsius >= 95) return "bad";
+  return celsius >= 80 ? "warn" : "neutral";
+}
+
+function TemperaturePill({ celsius }: { celsius: number }) {
+  return <Pill tone={temperatureTone(celsius)}>{Math.round(celsius)}°C</Pill>;
+}
+
 function formatWatts(watts: number | null | undefined): string | null {
   if (watts === null || watts === undefined) return null;
   return `${watts < 10 ? watts.toFixed(1) : Math.round(watts)}W`;
@@ -196,7 +205,7 @@ function CpuSection({ snapshot }: { snapshot: ServerSnapshot }) {
     <MetricSection
       label="CPU"
       icon={<SectionIcon icon={CpuIcon} color={METRIC_COLORS.good} />}
-      pill={<Pill>{temperature === null ? `load ${cpu.loadAverage[0].toFixed(2)}` : `${Math.round(temperature)}°C`}</Pill>}
+      pill={temperature === null ? <Pill>load {cpu.loadAverage[0].toFixed(2)}</Pill> : <TemperaturePill celsius={temperature} />}
       details={<>
         <p className="font-medium">{cpu.model}</p>
         <DetailRow label="Cores" value={cpu.cores} />
@@ -307,7 +316,7 @@ function GpuSection({ snapshot }: { snapshot: ServerSnapshot }) {
     <MetricSection
       label="GPU"
       icon={<SectionIcon icon={GpuIcon} color={METRIC_COLORS.gpu} />}
-      pill={sensors.gpuTempC === null ? undefined : <Pill>{Math.round(sensors.gpuTempC)}°C</Pill>}
+      pill={sensors.gpuTempC === null ? undefined : <TemperaturePill celsius={sensors.gpuTempC} />}
       details={<>
         {sensors.gpuPercent !== null ? <DetailRow label="Usage" value={`${sensors.gpuPercent}%`} /> : null}
         {sensors.gpuTempC !== null ? <DetailRow label="Temperature" value={`${sensors.gpuTempC.toFixed(1)}°C`} /> : null}

@@ -119,7 +119,7 @@ export function Pill({ children, tone = "neutral" }: { children: ReactNode; tone
   return (
     <span
       className={cn(
-        "inline-flex h-5 shrink-0 items-center gap-1 rounded-md bg-sidebar-accent px-1.5 text-2xs tabular-nums text-muted-foreground",
+        "inline-flex h-5 shrink-0 items-center gap-1 rounded-md bg-sidebar-accent px-1.5 text-2xs tabular-nums text-subtle-foreground",
         tone === "warn" && "text-[#eab308]",
         tone === "bad" && "text-[#ef4444]",
       )}
@@ -188,5 +188,5 @@ export function DetailRow({ label, value }: { label: string; value: ReactNode })
 }
 
 export function Footnote({ children }: { children: ReactNode }) {
-  return <p className="truncate text-xs text-muted-foreground">{children}</p>;
+  return <p className="truncate text-xs text-subtle-foreground">{children}</p>;
 }
