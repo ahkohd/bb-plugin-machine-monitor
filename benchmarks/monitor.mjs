@@ -16,7 +16,7 @@ const ms = (start) => Number(ns() - start) / 1e6;
 const directory = await mkdtemp(join(import.meta.dirname, ".monitor-"));
 const previousTmpdir = process.env.TMPDIR;
 process.env.TMPDIR = directory;
-const { bb, harness } = createFakePluginHost({ pluginId: "beacon", settings: { backgroundMonitoring: true, pressureNotifications: false } });
+const { bb, harness } = createFakePluginHost({ pluginId: "machine-status", settings: { backgroundMonitoring: true, pressureNotifications: false } });
 if (previousTmpdir === undefined) delete process.env.TMPDIR;
 else process.env.TMPDIR = previousTmpdir;
 const db = bb.storage.database();

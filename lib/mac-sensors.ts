@@ -40,7 +40,7 @@ export function parseSensorOutput(source: string): MacSensors | null {
 
 let helperPath: Promise<string | null> | null = null;
 
-const HELPER_DIRECTORY = join(homedir(), "Library", "Caches", "bb-plugin-beacon");
+const HELPER_DIRECTORY = join(homedir(), "Library", "Caches", "bb-plugin-machine-status");
 const WRITABLE_BY_OTHERS = 0o022;
 
 async function ownedAndPrivate(path: string, kind: "file" | "directory"): Promise<boolean> {
@@ -63,14 +63,14 @@ async function holdsHelper(path: string): Promise<boolean> {
   }
 }
 
-const HELPER_NAME = `beacon-sensors-${MAC_SENSORS_DIGEST.slice(0, 16)}`;
+const HELPER_NAME = `sensors-${MAC_SENSORS_DIGEST.slice(0, 16)}`;
 
 const UNUSED_HELPER_AGE_MS = 24 * 60 * 60_000;
 
 async function removeUnusedHelpers(): Promise<void> {
   const names = await readdir(HELPER_DIRECTORY).catch(() => []);
   await Promise.all(names
-    .filter((name) => name.startsWith("beacon-sensors-") && name !== HELPER_NAME)
+    .filter((name) => name.startsWith("sensors-") && name !== HELPER_NAME)
     .map(async (name) => {
       const path = join(HELPER_DIRECTORY, name);
       const stats = await lstat(path).catch(() => null);

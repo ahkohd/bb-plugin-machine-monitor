@@ -3,7 +3,7 @@ import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { Machine, rpcContract } from "../server";
 import { SERVER_MACHINE } from "./use-server-snapshot";
 
-const SELECTED_MACHINE_KEY = "beacon:machine";
+const SELECTED_MACHINE_KEY = "machine-status:machine";
 const LIST_ATTEMPTS = 4;
 const LIST_RETRY_MS = 1000;
 
@@ -15,7 +15,7 @@ function readSelectedMachine(): string {
   }
 }
 
-const MACHINES_CACHE_KEY = "beacon:machines";
+const MACHINES_CACHE_KEY = "machine-status:machines";
 
 function readCachedMachines(): Machine[] | null {
   try {

@@ -7,6 +7,7 @@ import { machineKey, useMachines } from "./hooks/use-machines";
 import { PressureNotifications, bindStatusOpener } from "./components/pressure-notifications";
 import { MachinePicker, selectedMachine } from "./components/machine-picker";
 import { loadErrorCopy } from "./lib/load-error-copy";
+import { moveLegacyStorage } from "./lib/legacy-storage";
 import { LoadingTailscaleRows, TailscaleRows, tailscaleRowCount } from "./components/tailscale-section";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Alert02Icon, ArrowDataTransferVerticalIcon, BatteryChargingIcon, BatteryFullIcon, Clock01Icon, CloudOffIcon, CpuIcon, GpuIcon, HardDriveIcon, RamMemoryIcon, ServerIcon } from "@hugeicons/core-free-icons";
@@ -558,7 +559,7 @@ function StatusDisclosure({ dismiss }: ExperimentalSidebarFooterDisclosureProps)
   }, [selected, loadedGpu, loadedBattery, loadedTailscaleRows]);
   return (
     <TooltipProvider>
-    <div ref={container} data-beacon-shell aria-busy={(active && !snapshot && !error) || reloading} className="w-full min-w-0 divide-y divide-sidebar-border">
+    <div ref={container} data-machine-status-shell aria-busy={(active && !snapshot && !error) || reloading} className="w-full min-w-0 divide-y divide-sidebar-border">
       <MachineHeader
         machines={machines}
         selected={selected}
@@ -580,6 +581,7 @@ function StatusDisclosure({ dismiss }: ExperimentalSidebarFooterDisclosureProps)
 }
 
 export default definePluginApp((app) => {
+  moveLegacyStorage(localStorage);
   app.experimental_icons.register({ name: "Server", component: ServerMark });
   app.slots.experimental_appOverlay({ id: "pressure-notifications", component: PressureNotifications });
   bindStatusOpener(app.experimental_sidebarFooter.register({

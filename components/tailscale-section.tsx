@@ -96,7 +96,7 @@ export function LoadingTailscaleRows({ rows }: { rows: number }) {
 
 type IpVersion = "IPv4" | "IPv6";
 
-const IP_VERSION_KEY = "beacon:ip-version";
+const IP_VERSION_KEY = "machine-status:ip-version";
 
 function readIpVersion(): IpVersion {
   try {

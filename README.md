@@ -1,37 +1,29 @@
-# Beacon
+# Machine status
 
 See CPU, GPU, memory, disk, network, battery and processes for any of your bb machines from the footer.
+
+Based on Beacon by [g4f4r0](https://github.com/g4f4r0/bb-plugins).
 
 ![Status in the BB footer](assets/screenshot.jpg)
 
 Status sits in the sidebar footer. Open it while you work. An optional background monitor can toast when CPU or memory stays high. The two collectors do not share a timer.
 
-Beacon reads system counters. It does not change settings, enable swap, kill processes, or call a monitoring service. Pick a machine from the menu at the top of the panel. The bb server is marked with a crown, your own machines with a server icon and BB Box boxes with BB Box's cube. Other machines are read by Beacon's host entry, which bb runs on each machine. Container cgroup limits are not shown.
+The plugin reads system counters. It does not change settings, enable swap, kill processes, or call a monitoring service. Pick a machine from the menu at the top of the panel. The bb server is marked with a crown, your own machines with a server icon and BB Box boxes with BB Box's cube. Other machines are read by the plugin's host entry, which bb runs on each machine. Container cgroup limits are not shown.
 
 Needs BB 0.46 and Plugin SDK 0.6.49.
 
 ## Install
 
-From this repository:
-
 ```sh
-bb plugin install git:https://github.com/g4f4r0/bb-plugins.git --plugin beacon
+bb plugin install git:https://github.com/ahkohd/bb-plugin-machine-status.git
 ```
 
-Same thing with an explicit subdirectory:
+Reload after a source change:
 
 ```sh
-bb plugin install git:https://github.com/g4f4r0/bb-plugins.git --subdirectory bb-plugin-beacon
+bb plugin build
+bb plugin reload machine-status
 ```
-
-On this server the live path is already `bb-plugin-beacon` in the checkout. Reload after a source change:
-
-```sh
-bb plugin build bb-plugin-beacon
-bb plugin reload beacon
-```
-
-The [BB Community listing](https://getbb.app/marketplace) tracks `beacon/vX.Y.Z` tags with `subdir` `bb-plugin-beacon` and `tagPrefix` `beacon/`. It was added in [get-bb/marketplace PR 279](https://github.com/get-bb/marketplace/pull/279). Publish a new tag within its `^0.1.0` range to make a compatible release available without changing the listing.
 
 ## Settings
 
@@ -42,10 +34,10 @@ The [BB Community listing](https://getbb.app/marketplace) tracks `beacon/vX.Y.Z`
 | `pressureNotifications` | `true` | In-app toasts when monitoring is on. |
 
 ```sh
-bb plugin config beacon
-bb plugin config beacon set refreshIntervalSeconds 10
-bb plugin config beacon set backgroundMonitoring true
-bb plugin config beacon set pressureNotifications false
+bb plugin config machine-status
+bb plugin config machine-status set refreshIntervalSeconds 10
+bb plugin config machine-status set backgroundMonitoring true
+bb plugin config machine-status set pressureNotifications false
 ```
 
 Settings apply without a reload. The dashboard interval does not change the monitor's 30-second cadence. Turning monitoring off cancels its timer and leaves existing logs.
@@ -54,13 +46,13 @@ Settings apply without a reload. The dashboard interval does not change the moni
 
 | Command | Result |
 | --- | --- |
-| `bb beacon snapshot` | CPU, load, memory, disk, and process summary. |
-| `bb beacon snapshot --json` | Full snapshot, including recent chart history. |
-| `bb beacon health` | Pressure assessment. Exit 2 if critical. |
-| `bb beacon health --json` | Structured assessment. Exit 0 always; read `status`. |
-| `bb beacon logs` | Last 100 diagnostic records. |
-| `bb beacon logs --limit 500 --json` | Up to 500 records as JSONL, oldest first in that window. |
-| `bb beacon test-alert` | Labeled toast preview on visible BB clients. |
+| `bb machine-status snapshot` | CPU, load, memory, disk, and process summary. |
+| `bb machine-status snapshot --json` | Full snapshot, including recent chart history. |
+| `bb machine-status health` | Pressure assessment. Exit 2 if critical. |
+| `bb machine-status health --json` | Structured assessment. Exit 0 always; read `status`. |
+| `bb machine-status logs` | Last 100 diagnostic records. |
+| `bb machine-status logs --limit 500 --json` | Up to 500 records as JSONL, oldest first in that window. |
+| `bb machine-status test-alert` | Labeled toast preview on visible BB clients. |
 
 `test-alert` needs monitoring and notifications both on. It does not create load, incidents, or log rows. It broadcasts to every connected client.
 
@@ -73,17 +65,17 @@ CLI snapshots share the dashboard collector. Repeated calls keep history alive. 
 - **Tailscale** name, address and tags, read from `tailscale status --json` once a minute, with copy buttons.
 - **WSL** machines show Windows' network traffic from `netsh.exe interface ipv4 show subinterfaces`, whose byte counters are 64-bit.
 
-The temperature and power readings come from a small helper in `native/beacon-sensors.c`. `native/build.sh` builds it on an Apple silicon Mac and embeds it in `lib/mac-sensors-binary.ts` with its SHA-256. Beacon writes it to `~/Library/Caches/bb-plugin-beacon`, which only the user can write to, checks its owner, permissions and hash once per process, and starts it once. The helper keeps its sensor connections open and answers one reading per line on stdin, so a poll starts no new process. Power is averaged over the time since the previous reading. The first reading after the helper starts has none, nor does a reading more than 65 seconds after the previous one, such as after the panel was closed or the Mac slept. Counters that report no energy at all are treated as unavailable, not as 0 W. If the helper exits or stops answering within 3 seconds, Beacon stops it and starts a new one, checking the file again first. A helper problem leaves the sensor values empty; it never fails the rest of the snapshot. Helper files from other Beacon versions are removed once they are a day old. The helper stops when Beacon is unloaded. Rebuild it whenever the C source changes; a test fails if the embedded helper and its recorded hash disagree.
+The temperature and power readings come from a small helper in `native/sensors.c`. `native/build.sh` builds it on an Apple silicon Mac and embeds it in `lib/mac-sensors-binary.ts` with its SHA-256. The plugin writes it to `~/Library/Caches/bb-plugin-beacon`, which only the user can write to, checks its owner, permissions and hash once per process, and starts it once. The helper keeps its sensor connections open and answers one reading per line on stdin, so a poll starts no new process. Power is averaged over the time since the previous reading. The first reading after the helper starts has none, nor does a reading more than 65 seconds after the previous one, such as after the panel was closed or the Mac slept. Counters that report no energy at all are treated as unavailable, not as 0 W. If the helper exits or stops answering within 3 seconds, the plugin stops it and starts a new one, checking the file again first. A helper problem leaves the sensor values empty; it never fails the rest of the snapshot. Helper files from other the plugin versions are removed once they are a day old. The helper stops when the plugin is unloaded. Rebuild it whenever the C source changes; a test fails if the embedded helper and its recorded hash disagree.
 
 ## What the numbers mean
 
-CPU percent is the change between samples. A cold start reads everything else first and then takes a 300 ms baseline, so the first reading has a percent that does not include Beacon's own work. Per-core values follow the same rule.
+CPU percent is the change between samples. A cold start reads everything else first and then takes a 300 ms baseline, so the first reading has a percent that does not include the plugin's own work. Per-core values follow the same rule.
 
 Load averages are 1, 5, and 15 minutes. They are not CPU percents.
 
 Memory used is total minus available. On Linux, available is `MemAvailable`. On macOS, used matches Activity Monitor's Memory Used: app memory (anonymous pages less purgeable) plus wired and compressed memory, from `vm_stat`. Cache includes `Cached` and `SReclaimable`. Cache and buffers are supporting counters, not extra used memory.
 
-Swap appears only when a swap total greater than zero is readable. Beacon never creates it.
+Swap appears only when a swap total greater than zero is readable. The plugin never creates it.
 
 Disk is `/`. Used space is allocated blocks. Available excludes reserved blocks, so used plus available may not equal total.
 
@@ -91,7 +83,7 @@ Network is received and sent bytes per second on the non-loopback interface with
 
 Snapshots list six PIDs by lifetime-average CPU, PID as tie-break. The popover shows the first five. Process CPU is relative to one core and can exceed 100%. That is not the sampled host CPU.
 
-Runtime is the BB server process, including loaded plugins, not Beacon alone.
+Runtime is the BB server process, including loaded plugins, not the plugin alone.
 
 Byte labels use powers of 1024. Network is bytes per second, not bits.
 
@@ -114,10 +106,10 @@ One toast at start, one at recovery, then a five-minute cooldown per metric. BB 
 
 CLI health warns at 85% and is critical at 95% for CPU, memory, or disk, and it also compares five-minute load with core count. That check has no confirmation window. Dashboard color, CLI health, and toasts are three different scales.
 
-`bb beacon logs` reads Beacon's rotating diagnostics. `bb plugin logs beacon` is the plugin runtime log. Do not edit the live SQLite file.
+`bb machine-status logs` reads the plugin's rotating diagnostics. `bb plugin logs machine-status` is the plugin runtime log. Do not edit the live SQLite file.
 
 ```sh
-bb beacon logs --limit 500 --json > beacon-diagnostics.jsonl
+bb machine-status logs --limit 500 --json > machine-status-diagnostics.jsonl
 ```
 
 ## Develop
@@ -127,12 +119,12 @@ bb plugin types --check
 npm test
 npm run typecheck
 bb plugin build
-bb plugin reload beacon
+bb plugin reload machine-status
 ```
 
 `bb plugin types --check` reports an SDK mismatch without writing. Tests live in `tests/`. They cover parsing, hide/show races, pressure state, and alert copy.
 
-For a UI change, open Status, wait for two samples, try a 390px width, then hide the tab and confirm polling stops. Use `bb beacon test-alert` instead of overloading the server.
+For a UI change, open Status, wait for two samples, try a 390px width, then hide the tab and confirm polling stops. Use `bb machine-status test-alert` instead of overloading the server.
 
 ## Troubleshooting
 
@@ -148,4 +140,4 @@ Network says unavailable. Needs Linux, macOS or WSL and a readable non-loopback 
 
 A process shows more than 100% CPU. Lifetime average on more than one core.
 
-A change is not visible. Build and `bb plugin reload beacon`. If reload fails, BB keeps the previous generation.
+A change is not visible. Build and `bb plugin reload machine-status`. If reload fails, BB keeps the previous generation.

@@ -10,7 +10,7 @@ const NO_OPTIONAL_SECTIONS: PanelShape = { gpu: false, battery: false, tailscale
 const MAX_TAILSCALE_ROWS = 4;
 
 function storageKey(machineId: string): string {
-  return `beacon:shape:${machineId}`;
+  return `machine-status:shape:${machineId}`;
 }
 
 export function hasGpuReadings(snapshot: ServerSnapshot): boolean {

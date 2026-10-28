@@ -45,7 +45,7 @@ test("invalid counters don't create incidents or false recoveries", () => {
 });
 
 test("log storage is a fixed ring with bounded payloads and monotonically increasing IDs", async (t) => {
-  const { bb, harness } = createFakePluginHost({ pluginId: "beacon" }); t.after(() => harness.lifecycle.dispose());
+  const { bb, harness } = createFakePluginHost({ pluginId: "machine-status" }); t.after(() => harness.lifecycle.dispose());
   const store = createMonitorStore(bb);
   for (let i = 0; i < LOG_LIMIT + 100; i++) store.write([{ type: "summary", timestamp: i, cpuPercent: 25, padding: "x".repeat(940) }]);
   const count = bb.storage.database().prepare("SELECT COUNT(*) AS n FROM pressure_logs").get().n;
@@ -57,7 +57,7 @@ test("log storage is a fixed ring with bounded payloads and monotonically increa
   const pageSize = bb.storage.database().pragma("page_size", { simple: true }); assert.ok(pages * pageSize < 10 * 1024 * 1024);
 });
 test("multi-record writes roll back atomically and state survives a store reopen", async (t) => {
-  const { bb, harness } = createFakePluginHost({ pluginId: "beacon" }); t.after(() => harness.lifecycle.dispose());
+  const { bb, harness } = createFakePluginHost({ pluginId: "machine-status" }); t.after(() => harness.lifecycle.dispose());
   const store = createMonitorStore(bb); const e = engine(); e.step(0); e.step(30_000); const events = e.step(60_000);
   store.write(events, e.read()); const previous = store.cursor();
   assert.throws(() => store.write([{ type: "summary", timestamp: 2 }, { type: "error", timestamp: 2, message: "x".repeat(1100) }], freshPressureState()));
@@ -66,7 +66,7 @@ test("multi-record writes roll back atomically and state survives a store reopen
 });
 
 test("overlapping stores allocate fresh sequences without overwriting each other's logs", async (t) => {
-  const { bb, harness } = createFakePluginHost({ pluginId: "beacon" }); t.after(() => harness.lifecycle.dispose());
+  const { bb, harness } = createFakePluginHost({ pluginId: "machine-status" }); t.after(() => harness.lifecycle.dispose());
   const first = createMonitorStore(bb), second = createMonitorStore(bb);
   first.write([{ type: "summary", timestamp: 1 }]);
   assert.equal(second.cursor(), 1);
@@ -80,7 +80,7 @@ test("overlapping stores allocate fresh sequences without overwriting each other
 async function setupMonitor(t, read = async () => base) {
   t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: 100_000 });
   t.mock.method(performance, "now", () => Date.now());
-  const { bb, harness } = createFakePluginHost({ pluginId: "beacon" });
+  const { bb, harness } = createFakePluginHost({ pluginId: "machine-status" });
   let calls = 0, resets = 0;
   const monitor = createPressureMonitor(bb, async (signal) => { calls++; return read(signal); }, () => { resets++; });
   const controller = new AbortController(); const running = monitor.start(controller.signal);
@@ -218,7 +218,7 @@ test("monitor restart preserves active incidents without duplicate alerts; disab
 });
 
 test("active incident notices survive eviction from the diagnostic ring", async (t) => {
-  const { bb, harness } = createFakePluginHost({ pluginId: "beacon" }); t.after(() => harness.lifecycle.dispose());
+  const { bb, harness } = createFakePluginHost({ pluginId: "machine-status" }); t.after(() => harness.lifecycle.dispose());
   const store = createMonitorStore(bb);
   store.write([{ ...notice(1) }]);
   for (let i = 0; i < LOG_LIMIT; i++) store.write([{ type: "summary", timestamp: i }]);
@@ -266,7 +266,7 @@ test("reconnect collapses missed transitions to one latest notice per metric", (
   assert.deepEqual(shown.map((n) => n.sequence), [3, 5]);
 });
 test("new SDK contract and CLI expose bounded logs without sampling full snapshots", async (t) => {
-  const { bb, harness } = createFakePluginHost({ pluginId: "beacon" }); t.after(() => harness.lifecycle.dispose()); await plugin(bb);
+  const { bb, harness } = createFakePluginHost({ pluginId: "machine-status" }); t.after(() => harness.lifecycle.dispose()); await plugin(bb);
   const status = await harness.behavior.callRpc("monitor_status", null); assert.equal(status.enabled, false);
   assert.equal((await harness.behavior.runCli(["logs", "--json"])).stdout, "");
   assert.equal((await harness.behavior.runCli(["logs", "--limit", "501"])).exitCode, 1);
@@ -283,7 +283,7 @@ test("new SDK contract and CLI expose bounded logs without sampling full snapsho
 });
 
 test("test alerts are explicit, respect settings, and leave diagnostics and incident state unchanged", async (t) => {
-  const { bb, harness } = createFakePluginHost({ pluginId: "beacon" }); t.after(() => harness.lifecycle.dispose()); await plugin(bb);
+  const { bb, harness } = createFakePluginHost({ pluginId: "machine-status" }); t.after(() => harness.lifecycle.dispose()); await plugin(bb);
   assert.equal((await harness.behavior.runCli(["test-alert"])).exitCode, 1);
   await harness.behavior.setSettings({ backgroundMonitoring: true, pressureNotifications: true });
   const before = await harness.behavior.callRpc("monitor_status", null);
@@ -299,7 +299,7 @@ test("test alerts are explicit, respect settings, and leave diagnostics and inci
 });
 
 test("malformed persisted notices are ignored without breaking status or state reads", async (t) => {
-  const { bb, harness } = createFakePluginHost({ pluginId: "beacon" }); t.after(() => harness.lifecycle.dispose());
+  const { bb, harness } = createFakePluginHost({ pluginId: "machine-status" }); t.after(() => harness.lifecycle.dispose());
   const store = createMonitorStore(bb); store.write([{ ...notice(1) }], freshPressureState());
   const db = bb.storage.database();
   db.prepare("UPDATE pressure_notices SET payload = ?").run('{"metric":"unknown"}');
@@ -310,7 +310,7 @@ test("malformed persisted notices are ignored without breaking status or state r
 });
 
 test("damaged diagnostic rows cannot prevent exporting the remaining logs", async (t) => {
-  const { bb, harness } = createFakePluginHost({ pluginId: "beacon" }); t.after(() => harness.lifecycle.dispose()); await plugin(bb);
+  const { bb, harness } = createFakePluginHost({ pluginId: "machine-status" }); t.after(() => harness.lifecycle.dispose()); await plugin(bb);
   const store = createMonitorStore(bb);
   const payloads = ["invalid JSON", "null", "[]", '{"type":"summary","timestamp":1e100}', '{"type":"summary","timestamp":"yesterday"}', '{"type":"summary","timestamp":1,"nested":{}}'];
   store.write(Array.from({ length: payloads.length + 2 }, (_, timestamp) => ({ type: "summary", timestamp })));

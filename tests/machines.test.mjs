@@ -14,9 +14,9 @@ const hosts = [
   makeHostResponse({ id: "host_agent", name: "agentctl", status: "connected", machineProviderId: "manual" }),
 ];
 
-async function startBeacon(t, callHostRpc) {
+async function startPlugin(t, callHostRpc) {
   const { bb, harness } = createFakePluginHost({
-    pluginId: "beacon",
+    pluginId: "machine-status",
     sdk: {
       hosts: { list: async () => hosts },
       system: { config: async () => ({ primaryHostId: SERVER_HOST }) },
@@ -29,7 +29,7 @@ async function startBeacon(t, callHostRpc) {
 }
 
 test("lists the server first, then own machines, then boxes, and hides offline machines", async (t) => {
-  const harness = await startBeacon(t);
+  const harness = await startPlugin(t);
   const { machines } = await harness.behavior.callRpc("machines_list", null);
   assert.deepEqual(
     machines.map(({ name, isServer, isBox }) => ({ name, isServer, isBox })),
@@ -44,7 +44,7 @@ test("lists the server first, then own machines, then boxes, and hides offline m
 
 test("reads another machine through its host entry with the current refresh interval", async (t) => {
   const remote = await hostEntry.handlers.machine_snapshot({ refreshIntervalMs: 5000, force: true }, {});
-  const harness = await startBeacon(t, async () => ({ ...remote, host: { ...remote.host, hostname: "mbp-host" } }));
+  const harness = await startPlugin(t, async () => ({ ...remote, host: { ...remote.host, hostname: "mbp-host" } }));
   const snapshot = await harness.behavior.callRpc("machine_snapshot", { hostId: "host_mac", force: true });
   assert.equal(snapshot.host.hostname, "mbp-host");
   assert.deepEqual(
@@ -77,7 +77,7 @@ test("macOS netstat parsing picks the busiest link and skips loopback and per-ad
 
 test("looks up the bb server's host id once, not on every poll", async (t) => {
   const remote = await hostEntry.handlers.machine_snapshot({ refreshIntervalMs: 5000, force: true }, {});
-  const harness = await startBeacon(t, async () => remote);
+  const harness = await startPlugin(t, async () => remote);
   await harness.behavior.callRpc("machines_list", null);
   for (let i = 0; i < 5; i++) {
     await harness.behavior.callRpc("machine_snapshot", { hostId: "host_mac", force: false });
@@ -122,11 +122,36 @@ test("the remembered panel layout survives bad storage and clamps tailscale rows
     assert.deepEqual(readPanelShape("host_mac"), { gpu: false, battery: false, tailscaleRows: 0 });
     rememberPanelShape("host_mac", { gpu: true, battery: true, tailscaleRows: 3 });
     assert.deepEqual(readPanelShape("host_mac"), { gpu: true, battery: true, tailscaleRows: 3 });
-    store.set("beacon:shape:host_box", JSON.stringify({ gpu: "yes", tailscaleRows: 40 }));
+    store.set("machine-status:shape:host_box", JSON.stringify({ gpu: "yes", tailscaleRows: 40 }));
     assert.deepEqual(readPanelShape("host_box"), { gpu: false, battery: false, tailscaleRows: 4 });
-    store.set("beacon:shape:host_box", "{not json");
+    store.set("machine-status:shape:host_box", "{not json");
     assert.deepEqual(readPanelShape("host_box"), { gpu: false, battery: false, tailscaleRows: 0 });
   } finally {
     delete globalThis.localStorage;
   }
+});
+
+test("settings stored under the old Beacon names move to the new names once", async () => {
+  const { moveLegacyStorage } = await import("../lib/legacy-storage.ts");
+  const store = new Map([
+    ["beacon:machine", "host_mac"],
+    ["beacon:ip-version", "IPv6"],
+    ["beacon:shape:host_mac", '{"gpu":true}'],
+    ["machine-status:ip-version", "IPv4"],
+    ["other-plugin:key", "untouched"],
+  ]);
+  const storage = {
+    get length() { return store.size; },
+    key: (index) => [...store.keys()][index] ?? null,
+    getItem: (key) => store.get(key) ?? null,
+    setItem: (key, value) => store.set(key, value),
+    removeItem: (key) => store.delete(key),
+  };
+  moveLegacyStorage(storage);
+  assert.deepEqual(Object.fromEntries(store), {
+    "machine-status:machine": "host_mac",
+    "machine-status:ip-version": "IPv4",
+    "machine-status:shape:host_mac": '{"gpu":true}',
+    "other-plugin:key": "untouched",
+  }, "old keys move, newer values win and other keys stay");
 });

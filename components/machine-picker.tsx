@@ -137,12 +137,12 @@ export function MachinePicker({
             onKeyDown={onKeyDown}
             placeholder="Search machines"
             aria-label="Search machines"
-            aria-controls="beacon-machine-list"
+            aria-controls="machine-status-list"
             className="h-7 w-full rounded-sm bg-transparent px-2 text-xs text-foreground placeholder:text-muted-foreground focus-visible:outline-none"
           />
         </div>
         <div
-          id="beacon-machine-list"
+          id="machine-status-list"
           ref={listRef}
           role="listbox"
           aria-label="Machines"

@@ -1,6 +1,6 @@
 # Monitor measurements
 
-Run on Linux from the Beacon package:
+Run on Linux from the plugin package:
 
 ```sh
 npm ci --include=dev
@@ -21,7 +21,7 @@ public live SDK contract. SQLite commits are timed separately from the complete
 sample. No measurements touch the live database or change plugin settings.
 
 `processWriteBytes` comes from `/proc/self/io`. Heap checkpoints use explicit GC
-and include the complete isolated test process, not just Beacon allocations.
+and include the complete isolated test process, not just the plugin's allocations.
 The benchmark avoids mock function call histories that would distort retention.
 It verifies the log-row bound, clean service shutdown, and no writes after a
 further ten simulated minutes. The CPU measurements include benchmark overhead.

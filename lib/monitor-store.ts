@@ -27,7 +27,7 @@ export function createMonitorStore(bb: Pick<BbPluginApi, "storage">) {
     "CREATE INDEX pressure_logs_type_sequence ON pressure_logs(type, sequence)",
     "CREATE TABLE pressure_notices (metric TEXT PRIMARY KEY, payload TEXT NOT NULL)",
   ]);
-  // Dedicated Beacon DB: cap the main file at 10 MiB; WAL checkpoints every 64 pages.
+  // Dedicated Machine status DB: cap the main file at 10 MiB; WAL checkpoints every 64 pages.
   const pageSize = Number(db.pragma("page_size", { simple: true }));
   db.pragma(`max_page_count = ${Math.floor(10 * 1024 * 1024 / pageSize)}`);
   const latestSequence = db.prepare("SELECT COALESCE(MAX(sequence), 0) AS sequence FROM pressure_logs");
@@ -41,7 +41,7 @@ export function createMonitorStore(bb: Pick<BbPluginApi, "storage">) {
     const sequence = cursor();
     const saved = entries.map((entry, index) => {
       const payload = JSON.stringify(entry);
-      if (Buffer.byteLength(payload) > 1024) throw new Error("Beacon log record exceeds 1 KiB");
+      if (Buffer.byteLength(payload) > 1024) throw new Error("Machine status log record exceeds 1 KiB");
       const next = sequence + index + 1;
       insert.run(next % LOG_LIMIT, next, entry.type, payload);
       if (entry.type === "incident" || entry.type === "recovery") saveNotice.run(entry.metric, JSON.stringify({ ...entry, sequence: next }));

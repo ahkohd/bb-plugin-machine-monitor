@@ -1,11 +1,11 @@
 {
-  "name": "bb-plugin-beacon",
+  "name": "bb-plugin-machine-status",
   "version": "0.1.2",
   "type": "module",
   "description": "See CPU, memory, disk, and process pressure on the BB server from the sidebar, without leaving the workspace.",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ahkohd/bb-plugin-beacon.git"
+    "url": "https://github.com/ahkohd/bb-plugin-machine-status.git"
   },
   "scripts": {
     "test": "node --test tests/*.test.mjs",
@@ -17,7 +17,7 @@
     "bbPluginSdk": ">=0.6.49"
   },
   "bb": {
-    "name": "Beacon",
+    "name": "Machine status",
     "description": "See CPU, memory, disk, and process pressure on the BB server from the sidebar, without leaving the workspace.",
     "branding": {
       "icon": "./assets/icon.svg"

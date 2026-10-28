@@ -107,14 +107,14 @@ test("the embedded helper matches its recorded digest", async () => {
   const { MAC_SENSORS_BINARY, MAC_SENSORS_DIGEST } = await import("../lib/mac-sensors-binary.ts");
   const { createHash } = await import("node:crypto");
   assert.equal(createHash("sha256").update(Buffer.from(MAC_SENSORS_BINARY, "base64")).digest("hex"), MAC_SENSORS_DIGEST);
-  assert.ok(readFileSync(new URL("../native/beacon-sensors.c", import.meta.url), "utf8").includes("IOReportCopyChannelsInGroup"));
+  assert.ok(readFileSync(new URL("../native/sensors.c", import.meta.url), "utf8").includes("IOReportCopyChannelsInGroup"));
 });
 
 async function fakeHelper(t, body) {
   const { mkdtemp, writeFile, rm } = await import("node:fs/promises");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
-  const directory = await mkdtemp(join(tmpdir(), "beacon-fake-helper-"));
+  const directory = await mkdtemp(join(tmpdir(), "machine-status-fake-helper-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const path = join(directory, "helper");
   await writeFile(path, `#!/bin/sh\n${body}\n`, { mode: 0o755 });
@@ -138,7 +138,7 @@ test("a hung, crashed or missing helper gives null and reports its exit", async 
     assert.equal(exits, 1, `${name} helper reports one exit`);
   }
   let missingExits = 0;
-  const missing = startHelper("/nonexistent/beacon-sensors", () => { missingExits += 1; });
+  const missing = startHelper("/nonexistent/sensors", () => { missingExits += 1; });
   assert.equal(await missing.request(300), null);
   assert.equal(missingExits, 1);
 });
