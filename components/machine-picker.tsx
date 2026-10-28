@@ -6,11 +6,12 @@ import { machineKey } from "../hooks/use-machines";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { CubeIcon, LaptopIcon, ServerIcon } from "@hugeicons/core-free-icons";
+import { CrownIcon, ServerIcon } from "@hugeicons/core-free-icons";
 
 type MachineKind = "server" | "machine" | "box";
 
-const KIND_ICONS = { server: ServerIcon, machine: LaptopIcon, box: CubeIcon } as const;
+const KIND_ICONS = { server: CrownIcon, machine: ServerIcon } as const;
+const BB_BOX_ICON = "bb-box/box";
 
 const KIND_LABELS: Record<MachineKind, string> = {
   server: "bb server",
@@ -24,6 +25,13 @@ function kindOf(machine: Machine): MachineKind {
 }
 
 function KindIcon({ kind, className }: { kind: MachineKind; className?: string }) {
+  if (kind === "box") {
+    return (
+      <span role="img" aria-label={KIND_LABELS.box} className={cn("inline-flex shrink-0", className)}>
+        <Icon name={BB_BOX_ICON} className="size-3.5" aria-hidden />
+      </span>
+    );
+  }
   return (
     <HugeiconsIcon
       icon={KIND_ICONS[kind]}
