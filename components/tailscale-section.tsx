@@ -12,6 +12,19 @@ import { ArrowDataTransferHorizontalIcon } from "@hugeicons/core-free-icons";
 
 const COPIED_MS = 1500;
 
+const KEPT_END_CHARACTERS = 8;
+
+function MiddleTruncated({ value }: { value: string }) {
+  const end = value.length > KEPT_END_CHARACTERS * 2 ? value.slice(-KEPT_END_CHARACTERS) : "";
+  const start = value.slice(0, value.length - end.length);
+  return (
+    <span className="flex min-w-0 tabular-nums" data-reveal="">
+      <span className="min-w-0 truncate">{start}</span>
+      {end ? <span className="shrink-0 whitespace-pre">{end}</span> : null}
+    </span>
+  );
+}
+
 function CopyValue({ label, value, title, labelControl }: { label: string; value: string; title?: string; labelControl?: ReactNode }) {
   const [feedback, setFeedback] = useState<{ status: "copied" | "failed"; value: string } | null>(null);
   const state = feedback?.value === value ? feedback.status : "idle";
@@ -50,7 +63,7 @@ function CopyValue({ label, value, title, labelControl }: { label: string; value
               )}
               aria-hidden
             />
-            <span className="min-w-0 truncate tabular-nums" data-reveal="">{value}</span>
+            <MiddleTruncated value={value} />
           </button>
         </TooltipTrigger>
         <TooltipContent side="top">{tooltip}</TooltipContent>
