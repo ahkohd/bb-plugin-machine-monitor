@@ -121,7 +121,7 @@ test("the remembered panel layout survives bad storage and clamps tailscale rows
     rememberPanelShape("host_mac", { gpu: true, battery: true, tailscaleRows: 3 });
     assert.deepEqual(readPanelShape("host_mac"), { gpu: true, battery: true, tailscaleRows: 3 });
     store.set("beacon:shape:host_box", JSON.stringify({ gpu: "yes", tailscaleRows: 40 }));
-    assert.deepEqual(readPanelShape("host_box"), { gpu: false, battery: false, tailscaleRows: 3 });
+    assert.deepEqual(readPanelShape("host_box"), { gpu: false, battery: false, tailscaleRows: 4 });
     store.set("beacon:shape:host_box", "{not json");
     assert.deepEqual(readPanelShape("host_box"), { gpu: false, battery: false, tailscaleRows: 0 });
   } finally {

@@ -59,11 +59,12 @@ function CopyValue({ label, value, title, labelControl }: { label: string; value
 }
 
 export function tailscaleRowCount(tailscale: TailscaleInfo): number {
-  return 1 + (tailscale.ipv4 || tailscale.ipv6 ? 1 : 0) + (tailscale.tags.length > 0 ? 1 : 0);
+  return 2 + (tailscale.ipv4 || tailscale.ipv6 ? 1 : 0) + (tailscale.tags.length > 0 ? 1 : 0);
 }
 
 const LOADING_ROWS = [
-  { label: "Name", sample: "machine.tailnet.ts.net" },
+  { label: "Name", sample: "machine" },
+  { label: "MagicDNS", sample: "machine.tailnet.ts.net" },
   { label: "IPv4", sample: "100.100.100.100" },
   { label: "Tags", sample: "tag:server" },
 ];
@@ -135,10 +136,15 @@ function AddressRow({ ipv4, ipv6 }: { ipv4: string | null; ipv6: string | null }
   return ipv6 ? <CopyValue label="IPv6" value={ipv6} title={`Copy ${ipv6}`} /> : null;
 }
 
+function machineName(dnsName: string): string {
+  return dnsName.split(".")[0] || dnsName;
+}
+
 export function TailscaleRows({ tailscale }: { tailscale: TailscaleInfo }) {
   return (
     <>
-      <CopyValue label="Name" value={tailscale.dnsName} />
+      <CopyValue label="Name" value={machineName(tailscale.dnsName)} />
+      <CopyValue label="MagicDNS" value={tailscale.dnsName} title={`Copy ${tailscale.dnsName}`} />
       <AddressRow ipv4={tailscale.ipv4} ipv6={tailscale.ipv6} />
       {tailscale.tags.length > 0 ? (
         <CopyValue label={tailscale.tags.length === 1 ? "Tag" : "Tags"} value={tailscale.tags.join(", ")} />

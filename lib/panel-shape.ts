@@ -7,7 +7,7 @@ export interface PanelShape {
 }
 
 const NO_OPTIONAL_SECTIONS: PanelShape = { gpu: false, battery: false, tailscaleRows: 0 };
-const MAX_TAILSCALE_ROWS = 3;
+const MAX_TAILSCALE_ROWS = 4;
 
 function storageKey(machineId: string): string {
   return `beacon:shape:${machineId}`;
