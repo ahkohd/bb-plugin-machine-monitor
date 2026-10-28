@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { arch, homedir, platform } from "node:os";
 import type { Socket } from "node:net";
 import { join } from "node:path";
@@ -68,10 +68,20 @@ async function holdsHelper(path: string): Promise<boolean> {
   }
 }
 
+const HELPER_NAME = `beacon-sensors-${MAC_SENSORS_DIGEST.slice(0, 16)}`;
+
+async function removeOlderHelpers(): Promise<void> {
+  const names = await readdir(HELPER_DIRECTORY).catch(() => []);
+  await Promise.all(names
+    .filter((name) => name.startsWith("beacon-sensors-") && name !== HELPER_NAME && !name.endsWith(".partial"))
+    .map((name) => rm(join(HELPER_DIRECTORY, name), { force: true })));
+}
+
 async function writeHelper(): Promise<string | null> {
   await mkdir(HELPER_DIRECTORY, { recursive: true, mode: 0o700 }).catch(() => undefined);
   if (!(await ownedAndPrivate(HELPER_DIRECTORY, "directory"))) return null;
-  const path = join(HELPER_DIRECTORY, `beacon-sensors-${MAC_SENSORS_DIGEST.slice(0, 16)}`);
+  await removeOlderHelpers();
+  const path = join(HELPER_DIRECTORY, HELPER_NAME);
   if (await holdsHelper(path)) return path;
   const partial = `${path}.${process.pid}.${Date.now()}.partial`;
   try {
