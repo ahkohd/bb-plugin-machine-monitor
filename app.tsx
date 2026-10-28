@@ -385,7 +385,7 @@ function ProcessesSection({ snapshot }: { snapshot: ServerSnapshot }) {
               </TooltipTrigger>
               <TooltipContent side="right" className="text-xs">{process.name} · PID {process.pid}</TooltipContent>
             </Tooltip>
-            <span className="text-right tabular-nums text-sidebar-foreground">{formatBytes(process.rssBytes)}</span>
+            <span className="text-right tabular-nums text-muted-foreground">{formatBytes(process.rssBytes)}</span>
             <span className="text-right tabular-nums text-sidebar-foreground" style={{ color: process.cpuPercent >= 50 ? METRIC_COLORS.warnDim : undefined }}>{process.cpuPercent.toFixed(1)}</span>
           </div>
         )) : <span className="col-span-3 text-muted-foreground">Unavailable</span>}
