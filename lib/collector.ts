@@ -5,6 +5,8 @@ import { promisify } from "node:util";
 import { basename } from "node:path";
 import type { MetricPoint, Processes, ServerSnapshot } from "../contract.ts";
 import { createTailscaleReader } from "./tailscale.ts";
+import { readBattery } from "./battery.ts";
+import { readMacSensors } from "./mac-sensors.ts";
 
 const ROOT_MOUNT = "/";
 const HISTORY_LIMIT = 72;
@@ -299,8 +301,8 @@ export function createCollector(refreshIntervalMs: () => number) {
     previousCpuTimes = cpuTimes;
     previousPerCoreTimes = perCoreTimes;
 
-    const [memoryDetails, disk, networkReading, processes, tailscale] = await Promise.all([
-      readMemoryDetails(signal), readDisk(), readNetworkTotals(signal).then((totals) => ({ totals, time: performance.now() })), readProcesses(signal), readTailscale(signal),
+    const [memoryDetails, disk, networkReading, processes, tailscale, battery, sensors] = await Promise.all([
+      readMemoryDetails(signal), readDisk(), readNetworkTotals(signal).then((totals) => ({ totals, time: performance.now() })), readProcesses(signal), readTailscale(signal), readBattery(signal), readMacSensors(signal),
     ]);
     signal.throwIfAborted();
     const totalBytes = totalmem();
@@ -329,6 +331,7 @@ export function createCollector(refreshIntervalMs: () => number) {
       memoryPercent,
       networkRxBytesPerSecond: network?.rxBytesPerSecond ?? null,
       networkTxBytesPerSecond: network?.txBytesPerSecond ?? null,
+      gpuPercent: sensors?.gpuPercent ?? null,
     });
     if (history.length > HISTORY_LIMIT) history.splice(0, history.length - HISTORY_LIMIT);
 
@@ -358,6 +361,8 @@ export function createCollector(refreshIntervalMs: () => number) {
       disk,
       network,
       tailscale,
+      battery,
+      sensors,
       processes,
       runtime: {
         pid: process.pid,

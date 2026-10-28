@@ -7,7 +7,7 @@ import { PressureNotifications, bindStatusOpener } from "./components/pressure-n
 import { MachinePicker } from "./components/machine-picker";
 import { TailscaleRows } from "./components/tailscale-section";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowDataTransferVerticalIcon, CpuIcon, HardDriveIcon, RamMemoryIcon, ServerIcon } from "@hugeicons/core-free-icons";
+import { ArrowDataTransferVerticalIcon, BatteryChargingIcon, BatteryFullIcon, CpuIcon, GpuIcon, HardDriveIcon, RamMemoryIcon, ServerIcon } from "@hugeicons/core-free-icons";
 import { BarChart, BigValue, DetailRow, Footnote, LineChart, METRIC_COLORS, MetricSection, Pill, ProgressBar } from "./components/metric-parts";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -116,10 +116,23 @@ function CollapseButton({ onCollapse }: { onCollapse: () => void }) {
   );
 }
 
-const SECTION_ICON_CLASS = "size-3.5 text-muted-foreground";
+const SECTION_ICON_CLASS = "size-3.5 opacity-90";
 
-function SectionIcon({ icon }: { icon: Parameters<typeof HugeiconsIcon>[0]["icon"] }) {
-  return <HugeiconsIcon icon={icon} className={SECTION_ICON_CLASS} aria-hidden="true" />;
+function SectionIcon({ icon, color }: { icon: Parameters<typeof HugeiconsIcon>[0]["icon"]; color: string }) {
+  return <HugeiconsIcon icon={icon} className={SECTION_ICON_CLASS} style={{ color }} aria-hidden="true" />;
+}
+
+function formatWatts(watts: number | null | undefined): string | null {
+  if (watts === null || watts === undefined) return null;
+  return `${watts < 10 ? watts.toFixed(1) : Math.round(watts)}W`;
+}
+
+function formatMinutes(minutes: number): string {
+  return `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")}`;
+}
+
+function joinParts(parts: Array<string | null | false | undefined>): string {
+  return parts.filter(Boolean).join(" · ");
 }
 
 function bytesParts(bytes: number): { value: string; unit: string } {
@@ -161,7 +174,7 @@ function SummaryStrip({ snapshot, isServer }: { snapshot: ServerSnapshot; isServ
     <div className="flex flex-wrap items-center gap-1 px-3 py-2">
       {health.issues.length > 0 ? (
         <Tooltip delayDuration={300}>
-          <TooltipTrigger asChild><span tabIndex={0} className="outline-none">{healthPill}</span></TooltipTrigger>
+          <TooltipTrigger asChild><span tabIndex={0} className="inline-flex outline-none">{healthPill}</span></TooltipTrigger>
           <TooltipContent side="right" align="start" className="max-w-64 space-y-1 text-xs">
             {health.issues.map((issue) => <p key={issue.label}>{issue.message}</p>)}
           </TooltipContent>
@@ -177,17 +190,20 @@ function SummaryStrip({ snapshot, isServer }: { snapshot: ServerSnapshot; isServ
 }
 
 function CpuSection({ snapshot }: { snapshot: ServerSnapshot }) {
-  const { cpu, history } = snapshot;
+  const { cpu, history, sensors } = snapshot;
+  const temperature = sensors?.cpuTempC ?? null;
   return (
     <MetricSection
       label="CPU"
-      icon={<SectionIcon icon={CpuIcon} />}
-      pill={<Pill>load {cpu.loadAverage[0].toFixed(2)}</Pill>}
+      icon={<SectionIcon icon={CpuIcon} color={METRIC_COLORS.good} />}
+      pill={<Pill>{temperature === null ? `load ${cpu.loadAverage[0].toFixed(2)}` : `${Math.round(temperature)}°C`}</Pill>}
       details={<>
         <p className="font-medium">{cpu.model}</p>
         <DetailRow label="Cores" value={cpu.cores} />
         {cpu.speedMHz > 0 ? <DetailRow label="Speed" value={`${(cpu.speedMHz / 1000).toFixed(2)} GHz`} /> : null}
         <DetailRow label="Load 1 · 5 · 15 min" value={cpu.loadAverage.map((value) => value.toFixed(2)).join(" · ")} />
+        {temperature !== null ? <DetailRow label="Temperature" value={`${temperature.toFixed(1)}°C`} /> : null}
+        {sensors?.cpuWatts != null ? <DetailRow label="Power" value={formatWatts(sensors.cpuWatts)} /> : null}
         <div className="grid grid-cols-4 gap-x-3 gap-y-1 pt-1">
           {cpu.perCoreUsagePercent.map((value, index) => (
             <div key={index} className="space-y-0.5">
@@ -200,7 +216,7 @@ function CpuSection({ snapshot }: { snapshot: ServerSnapshot }) {
     >
       <BigValue value={cpu.usagePercent === null ? "–" : Math.round(cpu.usagePercent)} unit="%" />
       <BarChart values={history.map((point) => point.cpuPercent)} colorFor={colorForPercent} label="CPU usage over the last few minutes" slots={HISTORY_BARS} />
-      <Footnote>{cpuState(cpu.usagePercent)} · {cpu.cores} cores</Footnote>
+      <Footnote>{joinParts([cpuState(cpu.usagePercent), formatWatts(sensors?.cpuWatts) ?? `${cpu.cores} cores`])}</Footnote>
     </MetricSection>
   );
 }
@@ -211,7 +227,7 @@ function MemorySection({ snapshot }: { snapshot: ServerSnapshot }) {
   return (
     <MetricSection
       label="Memory"
-      icon={<SectionIcon icon={RamMemoryIcon} />}
+      icon={<SectionIcon icon={RamMemoryIcon} color={METRIC_COLORS.memory} />}
       pill={<Pill tone={pressure.tone}>{pressure.label}</Pill>}
       details={<>
         <DetailRow label="Used" value={formatBytes(memory.usedBytes)} />
@@ -230,13 +246,13 @@ function MemorySection({ snapshot }: { snapshot: ServerSnapshot }) {
 function DiskSection({ snapshot }: { snapshot: ServerSnapshot }) {
   const { disk } = snapshot;
   if (!disk) {
-    return <MetricSection label="Free space" icon={<SectionIcon icon={HardDriveIcon} />} pill={<Pill>Unavailable</Pill>}><Footnote>Disk usage could not be read.</Footnote></MetricSection>;
+    return <MetricSection label="Free space" icon={<SectionIcon icon={HardDriveIcon} color={METRIC_COLORS.disk} />} pill={<Pill>Unavailable</Pill>}><Footnote>Disk usage could not be read.</Footnote></MetricSection>;
   }
   const free = bytesParts(disk.freeBytes);
   return (
     <MetricSection
       label="Free space"
-      icon={<SectionIcon icon={HardDriveIcon} />}
+      icon={<SectionIcon icon={HardDriveIcon} color={METRIC_COLORS.disk} />}
       pill={<Pill>{formatBytes(disk.totalBytes)}</Pill>}
       details={<>
         <DetailRow label="Mount" value={disk.mount} />
@@ -254,13 +270,13 @@ function DiskSection({ snapshot }: { snapshot: ServerSnapshot }) {
 function NetworkSection({ snapshot }: { snapshot: ServerSnapshot }) {
   const { network, history } = snapshot;
   if (!network) {
-    return <MetricSection label="Network" icon={<SectionIcon icon={ArrowDataTransferVerticalIcon} />} pill={<Pill>Unavailable</Pill>}><Footnote>Network counters could not be read.</Footnote></MetricSection>;
+    return <MetricSection label="Network" icon={<SectionIcon icon={ArrowDataTransferVerticalIcon} color={METRIC_COLORS.download} />} pill={<Pill>Unavailable</Pill>}><Footnote>Network counters could not be read.</Footnote></MetricSection>;
   }
   const down = network.rxBytesPerSecond === null ? null : bytesParts(network.rxBytesPerSecond);
   return (
     <MetricSection
       label="Network"
-      icon={<SectionIcon icon={ArrowDataTransferVerticalIcon} />}
+      icon={<SectionIcon icon={ArrowDataTransferVerticalIcon} color={METRIC_COLORS.download} />}
       pill={<Pill>{network.interface}</Pill>}
       details={<>
         <DetailRow label="Download" value={formatRate(network.rxBytesPerSecond)} />
@@ -284,6 +300,66 @@ function NetworkSection({ snapshot }: { snapshot: ServerSnapshot }) {
   );
 }
 
+function GpuSection({ snapshot }: { snapshot: ServerSnapshot }) {
+  const { sensors, history } = snapshot;
+  if (!sensors || (sensors.gpuPercent === null && sensors.gpuTempC === null)) return null;
+  return (
+    <MetricSection
+      label="GPU"
+      icon={<SectionIcon icon={GpuIcon} color={METRIC_COLORS.gpu} />}
+      pill={sensors.gpuTempC === null ? undefined : <Pill>{Math.round(sensors.gpuTempC)}°C</Pill>}
+      details={<>
+        {sensors.gpuPercent !== null ? <DetailRow label="Usage" value={`${sensors.gpuPercent}%`} /> : null}
+        {sensors.gpuTempC !== null ? <DetailRow label="Temperature" value={`${sensors.gpuTempC.toFixed(1)}°C`} /> : null}
+        {sensors.gpuWatts !== null ? <DetailRow label="Power" value={formatWatts(sensors.gpuWatts)} /> : null}
+      </>}
+    >
+      <BigValue value={sensors.gpuPercent ?? "–"} unit="%" />
+      <LineChart series={[{ values: history.map((point) => point.gpuPercent ?? null), color: METRIC_COLORS.gpu }]} max={100} label="GPU usage over the last few minutes" />
+      <Footnote>{joinParts([cpuState(sensors.gpuPercent), formatWatts(sensors.gpuWatts)])}</Footnote>
+    </MetricSection>
+  );
+}
+
+const BATTERY_STATES = {
+  charging: "Charging",
+  discharging: "On battery",
+  full: "Fully charged",
+  "plugged-in": "Plugged in",
+} as const;
+
+function batteryColor(percent: number, charging: boolean): string {
+  if (charging || percent > 40) return METRIC_COLORS.good;
+  return percent > 15 ? METRIC_COLORS.warn : METRIC_COLORS.bad;
+}
+
+function BatterySection({ snapshot }: { snapshot: ServerSnapshot }) {
+  const { battery } = snapshot;
+  if (!battery) return null;
+  const timeLeft = battery.minutesRemaining === null
+    ? null
+    : battery.state === "charging"
+      ? `${formatMinutes(battery.minutesRemaining)} to full`
+      : `${formatMinutes(battery.minutesRemaining)} left`;
+  return (
+    <MetricSection
+      label="Battery"
+      icon={<SectionIcon icon={battery.state === "charging" ? BatteryChargingIcon : BatteryFullIcon} color={batteryColor(battery.percent, battery.state === "charging")} />}
+      pill={battery.healthPercent === null ? undefined : <Pill>{Math.round(battery.healthPercent)}% health</Pill>}
+      details={<>
+        <DetailRow label="State" value={BATTERY_STATES[battery.state]} />
+        {battery.cycleCount !== null ? <DetailRow label="Cycles" value={battery.cycleCount} /> : null}
+        {battery.temperatureC !== null ? <DetailRow label="Temperature" value={`${battery.temperatureC.toFixed(1)}°C`} /> : null}
+        {battery.watts !== null ? <DetailRow label={battery.state === "charging" ? "Charging power" : "Power draw"} value={formatWatts(battery.watts)} /> : null}
+      </>}
+    >
+      <BigValue value={Math.round(battery.percent)} unit="%" />
+      <ProgressBar value={battery.percent} color={batteryColor(battery.percent, battery.state === "charging")} label="Battery charge" />
+      <Footnote>{joinParts([BATTERY_STATES[battery.state], battery.state === "charging" || battery.state === "discharging" ? formatWatts(battery.watts) : null, timeLeft])}</Footnote>
+    </MetricSection>
+  );
+}
+
 function ProcessesSection({ snapshot }: { snapshot: ServerSnapshot }) {
   const { processes } = snapshot;
   return (
@@ -293,10 +369,15 @@ function ProcessesSection({ snapshot }: { snapshot: ServerSnapshot }) {
         <span className="text-right text-muted-foreground">Memory</span>
         <span className="text-right text-muted-foreground">% CPU</span>
         {processes.available ? processes.top.slice(0, 5).map((process) => (
-          <div key={process.pid} className="contents" title={`PID ${process.pid}`}>
-            <span className="min-w-0 truncate text-sidebar-foreground">{process.name}</span>
+          <div key={process.pid} className="contents">
+            <Tooltip delayDuration={400}>
+              <TooltipTrigger asChild>
+                <span className="min-w-0 truncate text-sidebar-foreground">{process.name}</span>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="text-xs">{process.name} · PID {process.pid}</TooltipContent>
+            </Tooltip>
             <span className="text-right tabular-nums text-muted-foreground">{formatBytes(process.rssBytes)}</span>
-            <span className="text-right tabular-nums" style={{ color: process.cpuPercent >= 50 ? METRIC_COLORS.warn : undefined }}>{process.cpuPercent.toFixed(1)}</span>
+            <span className="text-right tabular-nums" style={{ color: process.cpuPercent >= 50 ? METRIC_COLORS.warnDim : undefined }}>{process.cpuPercent.toFixed(1)}</span>
           </div>
         )) : <span className="col-span-3 text-muted-foreground">Unavailable</span>}
       </div>
@@ -309,9 +390,11 @@ function StatusPopover({ snapshot, isServer }: { snapshot: ServerSnapshot; isSer
     <>
       <SummaryStrip snapshot={snapshot} isServer={isServer} />
       <CpuSection snapshot={snapshot} />
+      <GpuSection snapshot={snapshot} />
       <MemorySection snapshot={snapshot} />
       <DiskSection snapshot={snapshot} />
       <NetworkSection snapshot={snapshot} />
+      <BatterySection snapshot={snapshot} />
       {snapshot.tailscale ? (
         <Section label="Tailscale">
           <TailscaleRows tailscale={snapshot.tailscale} />

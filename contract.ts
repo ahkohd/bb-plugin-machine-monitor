@@ -8,6 +8,7 @@ const metricPointSchema = z.object({
   memoryPercent: percentageSchema,
   networkRxBytesPerSecond: z.number().nullable(),
   networkTxBytesPerSecond: z.number().nullable(),
+  gpuPercent: percentageSchema.nullable().optional(),
 });
 const issueSchema = z.object({
   severity: z.enum(["warning", "critical"]),
@@ -64,6 +65,22 @@ export const snapshotSchema = z.object({
     rxTotalBytes: z.number(),
     txTotalBytes: z.number(),
   }).nullable(),
+  battery: z.object({
+    percent: percentageSchema,
+    state: z.enum(["charging", "discharging", "full", "plugged-in"]),
+    minutesRemaining: z.number().nonnegative().nullable(),
+    healthPercent: percentageSchema.nullable(),
+    cycleCount: z.number().int().nonnegative().nullable(),
+    watts: z.number().nonnegative().nullable(),
+    temperatureC: z.number().nullable(),
+  }).nullable().optional(),
+  sensors: z.object({
+    cpuTempC: z.number().nullable(),
+    gpuTempC: z.number().nullable(),
+    cpuWatts: z.number().nonnegative().nullable(),
+    gpuWatts: z.number().nonnegative().nullable(),
+    gpuPercent: percentageSchema.nullable(),
+  }).nullable().optional(),
   tailscale: z.object({
     dnsName: z.string().max(255),
     ipv4: z.string().max(64).nullable(),
