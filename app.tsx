@@ -369,8 +369,13 @@ function BatterySection({ snapshot }: { snapshot: ServerSnapshot }) {
   );
 }
 
+function shareColor(share: number, warnAt: number, badAt: number): string | undefined {
+  if (share >= badAt) return METRIC_COLORS.badDim;
+  return share >= warnAt ? METRIC_COLORS.warnDim : undefined;
+}
+
 function ProcessesSection({ snapshot }: { snapshot: ServerSnapshot }) {
-  const { processes } = snapshot;
+  const { processes, memory } = snapshot;
   return (
     <section aria-label="Top processes" className="min-w-0 p-3">
       <div className="grid grid-cols-[1fr_auto_3rem] items-center gap-x-3 gap-y-1.5 text-xs">
@@ -385,8 +390,8 @@ function ProcessesSection({ snapshot }: { snapshot: ServerSnapshot }) {
               </TooltipTrigger>
               <TooltipContent side="right" className="text-xs">{process.name} · PID {process.pid}</TooltipContent>
             </Tooltip>
-            <span className="text-right tabular-nums text-muted-foreground">{formatBytes(process.rssBytes)}</span>
-            <span className="text-right tabular-nums text-sidebar-foreground" style={{ color: process.cpuPercent >= 50 ? METRIC_COLORS.warnDim : undefined }}>{process.cpuPercent.toFixed(1)}</span>
+            <span className="text-right tabular-nums text-muted-foreground" style={{ color: shareColor(memory.totalBytes > 0 ? process.rssBytes / memory.totalBytes : 0, 0.25, 0.5) }}>{formatBytes(process.rssBytes)}</span>
+            <span className="text-right tabular-nums text-sidebar-foreground" style={{ color: shareColor(process.cpuPercent, 50, 100) }}>{process.cpuPercent.toFixed(1)}</span>
           </div>
         )) : <span className="col-span-3 text-muted-foreground">Unavailable</span>}
       </div>

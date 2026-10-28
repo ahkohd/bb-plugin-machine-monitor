@@ -6,6 +6,7 @@ export const METRIC_COLORS = {
   good: "#22c55e",
   warn: "#eab308",
   warnDim: "rgb(234 179 8 / 0.75)",
+  badDim: "rgb(239 68 68 / 0.8)",
   gpu: "#f59e0b",
   bad: "#ef4444",
   memory: "#e5c07b",
