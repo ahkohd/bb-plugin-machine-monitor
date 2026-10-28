@@ -302,7 +302,10 @@ export function createCollector(refreshIntervalMs: () => number) {
   }
 
   async function collect(signal: AbortSignal): Promise<ServerSnapshot> {
-    if (previousCpuTimes === null) await takeBaseline(signal);
+    const slowReadings = Promise.all([
+      readMemoryDetails(signal), readDisk(), readProcesses(signal), readTailscale(signal), readBattery(signal), readMacSensors(signal),
+    ]);
+    if (previousCpuTimes === null) await Promise.all([takeBaseline(signal), slowReadings]);
     const cpuList = cpus();
     const cpuTimes = readCpuTimes(cpuList);
     const perCoreTimes = cpuList.map(cpuTimesFor);
@@ -314,8 +317,8 @@ export function createCollector(refreshIntervalMs: () => number) {
     previousCpuTimes = cpuTimes;
     previousPerCoreTimes = perCoreTimes;
 
-    const [memoryDetails, disk, networkReading, processes, tailscale, battery, sensors] = await Promise.all([
-      readMemoryDetails(signal), readDisk(), readNetworkTotals(signal).then((totals) => ({ totals, time: performance.now() })), readProcesses(signal), readTailscale(signal), readBattery(signal), readMacSensors(signal),
+    const [networkReading, [memoryDetails, disk, processes, tailscale, battery, sensors]] = await Promise.all([
+      readNetworkTotals(signal).then((totals) => ({ totals, time: performance.now() })), slowReadings,
     ]);
     signal.throwIfAborted();
     const totalBytes = totalmem();
