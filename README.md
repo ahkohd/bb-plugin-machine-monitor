@@ -7,17 +7,17 @@ Based on Beacon by [g4f4r0](https://github.com/g4f4r0/bb-plugins).
 <p>
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/panel-dark.png">
-    <img src="assets/screenshots/panel-light.png" alt="The Machine status panel for a Mac: summary, CPU, GPU, memory, free space, network, Tailscale and top processes" width="306">
+    <img src="assets/screenshots/panel-light.png" alt="The Machine status panel for a Mac: summary, CPU, GPU, memory, free space, network, Tailscale and top processes" width="314">
   </picture>
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/picker-dark.png">
-    <img src="assets/screenshots/picker-light.png" alt="The machine picker, listing the bb server, machines and boxes" width="312" align="top">
+    <img src="assets/screenshots/picker-light.png" alt="The machine picker, listing the bb server, machines and boxes" width="314" align="top">
   </picture>
 </p>
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/tooltip-dark.png">
-  <img src="assets/screenshots/tooltip-light.png" alt="Hovering the CPU section shows the model, speed, load averages, temperature and every core" width="559">
+  <img src="assets/screenshots/tooltip-light.png" alt="Hovering the CPU section shows the model, speed, load averages, temperature and every core" width="556">
 </picture>
 
 ## What it shows
