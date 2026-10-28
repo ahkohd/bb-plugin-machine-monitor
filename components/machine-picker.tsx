@@ -25,10 +25,12 @@ export function MachinePicker({
   machines,
   selected,
   onSelect,
+  onOpen,
 }: {
   machines: Machine[] | null;
   selected: string;
   onSelect: (machineId: string) => void;
+  onOpen: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -81,6 +83,7 @@ export function MachinePicker({
       onOpenChange={(next) => {
         setOpen(next);
         if (next) {
+          onOpen();
           setQuery("");
           setHighlighted(Math.max(0, (machines ?? []).findIndex((machine) => machineKey(machine) === selected)));
         }
@@ -88,7 +91,6 @@ export function MachinePicker({
     >
       <PopoverTrigger
         aria-label="Machine"
-        disabled={machines === null}
         className="flex h-6 min-w-0 max-w-full shrink items-center gap-1 rounded-md px-1.5 text-xs font-medium text-sidebar-foreground hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring disabled:opacity-50 data-[state=open]:bg-sidebar-accent"
       >
         <span className="min-w-0 truncate">{displayName(machines, selected)}</span>
@@ -117,7 +119,9 @@ export function MachinePicker({
           aria-label="Machines"
           className="max-h-56 overflow-y-auto p-1"
         >
-          {flat.length === 0 ? (
+          {machines === null ? (
+            <p className="px-2 py-1.5 text-xs text-muted-foreground">Loading machines</p>
+          ) : flat.length === 0 ? (
             <p className="px-2 py-1.5 text-xs text-muted-foreground">No machines match.</p>
           ) : (
             groups.map((group) => (

@@ -210,11 +210,11 @@ function LoadingPopover() {
   );
 }
 
-function MachineHeader({ machines, selected, onSelect, actions }: { machines: Machine[] | null; selected: string; onSelect: (machineId: string) => void; actions: ReactNode }) {
+function MachineHeader({ machines, selected, onSelect, onOpen, actions }: { machines: Machine[] | null; selected: string; onSelect: (machineId: string) => void; onOpen: () => void; actions: ReactNode }) {
   return (
     <div className="sticky top-0 z-10 bg-sidebar">
       <div className="flex h-9 min-w-0 items-center gap-1 bg-sidebar-accent/50 px-1.5">
-        <MachinePicker machines={machines} selected={selected} onSelect={onSelect} />
+        <MachinePicker machines={machines} selected={selected} onSelect={onSelect} onOpen={onOpen} />
         <span className="flex-1" />
         {actions}
       </div>
@@ -227,7 +227,7 @@ function ServerMark({ className }: { className?: string }) {
 }
 
 function StatusDisclosure({ dismiss }: ExperimentalSidebarFooterDisclosureProps) {
-  const { machines, selected, setSelected } = useMachines();
+  const { machines, selected, setSelected, refresh: refreshMachines } = useMachines();
   const { container, active, snapshot, error, reload, reloading } = useServerSnapshot(selected);
   return (
     <TooltipProvider>
@@ -236,6 +236,7 @@ function StatusDisclosure({ dismiss }: ExperimentalSidebarFooterDisclosureProps)
         machines={machines}
         selected={selected}
         onSelect={setSelected}
+        onOpen={() => void refreshMachines()}
         actions={<>
           <ReloadButton onReload={reload} reloading={reloading} updatedAt={snapshot?.timestamp ?? null} />
           <CollapseButton onCollapse={dismiss} />
