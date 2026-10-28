@@ -27,7 +27,7 @@ function CopyValue({ label, value, title }: { label: string; value: string; titl
   const tooltip = state === "copied" ? "Copied" : state === "failed" ? "Could not copy" : (title ?? `Copy ${label.toLowerCase()}`);
   return (
     <div className="flex items-center justify-between gap-2 text-xs">
-      <span className="shrink-0 text-subtle-foreground">{label}</span>
+      <span className="shrink-0 text-subtle-foreground/75">{label}</span>
       <Tooltip delayDuration={350} disableHoverableContent open={hovered || state !== "idle"} onOpenChange={setHovered}>
         <TooltipTrigger asChild>
           <button
