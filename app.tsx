@@ -1,11 +1,11 @@
 import type { ReactNode } from "react";
 import { definePluginApp, experimental_Icon as Icon, type ExperimentalSidebarFooterDisclosureProps } from "@get-bb/plugin-sdk/app";
-import type { ServerSnapshot } from "./server";
-import { useServerSnapshot } from "./hooks/use-server-snapshot";
+import type { Machine, ServerSnapshot } from "./server";
+import { SERVER_MACHINE, useServerSnapshot } from "./hooks/use-server-snapshot";
+import { machineKey, useMachines } from "./hooks/use-machines";
 import { PressureNotifications, bindStatusOpener } from "./components/pressure-notifications";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { ServerIcon } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const GREEN = "#22c55e";
@@ -107,7 +107,7 @@ function ReloadButton({ onReload, reloading }: { onReload: () => void; reloading
       variant="ghost"
       size="icon"
       className="size-8"
-      aria-label="Reload server status"
+      aria-label="Reload machine status"
       aria-busy={reloading}
       disabled={reloading}
       onClick={onReload}
@@ -121,7 +121,7 @@ function ReloadButton({ onReload, reloading }: { onReload: () => void; reloading
   );
 }
 
-function StatusPopover({ snapshot, onReload, reloading }: { snapshot: ServerSnapshot; onReload: () => void; reloading: boolean }) {
+function StatusPopover({ snapshot, onReload, reloading, isServer }: { snapshot: ServerSnapshot; onReload: () => void; reloading: boolean; isServer: boolean }) {
   const { cpu, memory, disk, network, processes, runtime, host, history } = snapshot;
   return (
     <>
@@ -159,8 +159,8 @@ function StatusPopover({ snapshot, onReload, reloading }: { snapshot: ServerSnap
         ))}
       </Section>
       <Section label="Uptime">
-        <Row label="Server" value={formatDuration(host.uptimeSeconds)} />
-        <Row label="bb" value={formatDuration(runtime.processUptimeSeconds)} />
+        <Row label={isServer ? "Server" : "Machine"} value={formatDuration(host.uptimeSeconds)} />
+        {isServer ? <Row label="bb" value={formatDuration(runtime.processUptimeSeconds)} /> : null}
       </Section>
       <Section ariaLabel="Snapshot update" label={<time dateTime={snapshot.timestamp}>{formatUpdatedAt(snapshot.timestamp)}</time>} value={<ReloadButton onReload={onReload} reloading={reloading} />} />
     </>
@@ -181,31 +181,51 @@ function LoadingPopover() {
   );
 }
 
-function ServerMark({ className }: { className?: string }) {
-  return <HugeiconsIcon icon={ServerIcon} className={className} strokeWidth={2} style={{ opacity: 0.8 }} aria-hidden="true" />;
+function MachinePicker({ machines, selected, onSelect }: { machines: Machine[] | null; selected: string; onSelect: (machineId: string) => void }) {
+  const options = machines ?? [];
+  const known = options.some((machine) => machineKey(machine) === selected);
+  return (
+    <div className="p-2">
+      <Select value={selected} onValueChange={onSelect} disabled={machines === null}>
+        <SelectTrigger aria-label="Machine" className="h-7 w-full justify-between border-sidebar-border bg-transparent px-2 text-xs font-medium text-sidebar-foreground hover:bg-sidebar-accent focus:ring-0">
+          <SelectValue placeholder="This bb server" />
+        </SelectTrigger>
+        <SelectContent>
+          {known ? null : <SelectItem value={SERVER_MACHINE} className="text-xs">This bb server</SelectItem>}
+          {options.map((machine) => (
+            <SelectItem key={machine.id} value={machineKey(machine)} disabled={!machine.connected} className="text-xs">
+              {machine.name}
+              {machine.isServer ? " · server" : machine.connected ? "" : " · offline"}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
 }
 
 function StatusDisclosure(_props: ExperimentalSidebarFooterDisclosureProps) {
-  const { container, active, snapshot, error, reload, reloading } = useServerSnapshot();
+  const { machines, selected, setSelected } = useMachines();
+  const { container, active, snapshot, error, reload, reloading } = useServerSnapshot(selected);
   return (
     <div ref={container} data-beacon-shell aria-busy={(active && !snapshot && !error) || reloading} className="w-full min-w-0 divide-y divide-sidebar-border">
+      <MachinePicker machines={machines} selected={selected} onSelect={setSelected} />
       {error ? <div role="alert" className="px-3 py-2 text-xs text-destructive">Could not refresh: {error}</div> : null}
       {/* The skeleton gives the shell height so the visibility observer can activate polling. */}
-      {snapshot ? <StatusPopover snapshot={snapshot} onReload={reload} reloading={reloading} /> : (
-        error ? <div className="p-3 text-xs text-muted-foreground">Server data unavailable. Retrying while visible.</div> : <LoadingPopover />
+      {snapshot ? <StatusPopover snapshot={snapshot} onReload={reload} reloading={reloading} isServer={selected === SERVER_MACHINE} /> : (
+        error ? <div className="p-3 text-xs text-muted-foreground">Machine data unavailable. Retrying while visible.</div> : <LoadingPopover />
       )}
     </div>
   );
 }
 
 export default definePluginApp((app) => {
-  app.experimental_icons.register({ name: "Server", component: ServerMark });
   app.slots.experimental_appOverlay({ id: "pressure-notifications", component: PressureNotifications });
   bindStatusOpener(app.experimental_sidebarFooter.register({
     kind: "disclosure",
     id: "status",
-    label: "Server status",
-    icon: "Server",
+    label: "Machine status",
+    icon: "Laptop",
     component: StatusDisclosure,
   }).open);
 });

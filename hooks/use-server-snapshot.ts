@@ -4,30 +4,52 @@ import type { rpcContract, ServerSnapshot } from "../server";
 import { createSnapshotSource } from "../lib/snapshot-source.ts";
 import { createVisiblePoller } from "../lib/visible-poller.ts";
 
-// One server snapshot per app bundle, never keyed by thread. Survives disclosure
-// remounts without timers; replaced on success and released with the bundle.
-const source = createSnapshotSource<ServerSnapshot>((value) => value.refreshIntervalMs);
+type SnapshotSource = ReturnType<typeof createSnapshotSource<ServerSnapshot>>;
 
-export function useServerSnapshot() {
+// One bounded snapshot per machine per app bundle, never keyed by thread.
+// Survives disclosure remounts without timers and is released with the bundle.
+const sources = new Map<string, SnapshotSource>();
+
+function sourceFor(machineKey: string): SnapshotSource {
+  let source = sources.get(machineKey);
+  if (!source) {
+    source = createSnapshotSource<ServerSnapshot>((value) => value.refreshIntervalMs);
+    sources.set(machineKey, source);
+  }
+  return source;
+}
+
+export const SERVER_MACHINE = "server";
+
+export function useServerSnapshot(machineId: string) {
   const rpc = useRpc<typeof rpcContract>();
   const container = useRef<HTMLDivElement>(null);
   const pollerRef = useRef<ReturnType<typeof createVisiblePoller<ServerSnapshot>> | null>(null);
   const forceRefresh = useRef(false);
   const [active, setActive] = useState(false);
-  const [snapshot, setSnapshot] = useState<ServerSnapshot | null>(source.snapshot);
+  const [snapshot, setSnapshot] = useState<ServerSnapshot | null>(() => sourceFor(machineId).snapshot());
   const [error, setError] = useState<string | null>(null);
   const [reloading, setReloading] = useState(false);
 
   useEffect(() => {
     const element = container.current;
     if (!element) return;
+    const source = sourceFor(machineId);
+    setSnapshot(source.snapshot());
+    setError(null);
     let intersecting = false;
     let pageHidden = false;
     const poller = createVisiblePoller({
       load: () => {
         const force = forceRefresh.current;
         forceRefresh.current = false;
-        return source.load(() => rpc.call(force ? "metrics_refresh" : "metrics_snapshot", null), force);
+        return source.load(
+          () =>
+            machineId === SERVER_MACHINE
+              ? rpc.call(force ? "metrics_refresh" : "metrics_snapshot", null)
+              : rpc.call("machine_snapshot", { hostId: machineId, force }),
+          force,
+        );
       },
       receive(next) { setSnapshot(next); setError(null); setReloading(false); },
       error(cause) { setError(cause instanceof Error ? cause.message : String(cause)); setReloading(false); },
@@ -59,7 +81,7 @@ export function useServerSnapshot() {
       poller.dispose();
       pollerRef.current = null;
     };
-  }, [rpc]);
+  }, [rpc, machineId]);
 
   const reload = useCallback(() => {
     forceRefresh.current = true;

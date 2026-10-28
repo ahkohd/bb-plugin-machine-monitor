@@ -1,290 +1,47 @@
-import { execFile } from "node:child_process";
-import { readFile, readlink, statfs } from "node:fs/promises";
-import { arch, cpus, freemem, hostname, loadavg, platform, release, totalmem, uptime } from "node:os";
-import { promisify } from "node:util";
-import { basename } from "node:path";
+import { readFile } from "node:fs/promises";
+import { cpus, freemem, loadavg, platform, totalmem } from "node:os";
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
+import { hostContract, snapshotSchema, type ServerSnapshot } from "./contract.ts";
+import {
+  calculateCpuUsage,
+  clampPercentage,
+  createCollector,
+  readCpuTimes,
+  type CpuTimes,
+} from "./lib/collector.ts";
 import { createDemandSampler } from "./lib/demand-sampler.ts";
 import { createPressureMonitor } from "./lib/pressure-monitor.ts";
 import { PRESSURE_CHANNEL } from "./lib/pressure.ts";
 
-const percentageSchema = z.number().min(0).max(100);
-const metricPointSchema = z.object({
-  timestamp: z.number(),
-  cpuPercent: percentageSchema.nullable(),
-  memoryPercent: percentageSchema,
-  networkRxBytesPerSecond: z.number().nullable(),
-  networkTxBytesPerSecond: z.number().nullable(),
-});
-const issueSchema = z.object({
-  severity: z.enum(["warning", "critical"]),
-  label: z.string(),
-  message: z.string(),
-});
-const processSchema = z.object({
-  pid: z.number().int().positive(),
-  name: z.string().max(128),
-  cpuPercent: z.number().nonnegative(),
-  memoryPercent: z.number().nonnegative(),
-  rssBytes: z.number().nonnegative(),
-});
-const snapshotSchema = z.object({
-  timestamp: z.string(),
-  refreshIntervalMs: z.number().int().min(2000).max(60_000),
-  host: z.object({
-    hostname: z.string(),
-    platform: z.string(),
-    release: z.string(),
-    arch: z.string(),
-    uptimeSeconds: z.number(),
-  }),
-  cpu: z.object({
-    model: z.string(),
-    cores: z.number().int().positive(),
-    speedMHz: z.number().nonnegative(),
-    usagePercent: percentageSchema.nullable(),
-    perCoreUsagePercent: z.array(percentageSchema.nullable()),
-    loadAverage: z.tuple([z.number(), z.number(), z.number()]),
-  }),
-  memory: z.object({
-    totalBytes: z.number(),
-    usedBytes: z.number(),
-    freeBytes: z.number(),
-    availableBytes: z.number(),
-    cachedBytes: z.number(),
-    buffersBytes: z.number(),
-    swapTotalBytes: z.number(),
-    swapUsedBytes: z.number(),
-    usagePercent: percentageSchema,
-  }),
-  disk: z.object({
-    mount: z.string(),
-    totalBytes: z.number(),
-    usedBytes: z.number(),
-    freeBytes: z.number(),
-    usagePercent: percentageSchema,
-  }).nullable(),
-  network: z.object({
-    interface: z.string(),
-    rxBytesPerSecond: z.number().nullable(),
-    txBytesPerSecond: z.number().nullable(),
-    rxTotalBytes: z.number(),
-    txTotalBytes: z.number(),
-  }).nullable(),
-  processes: z.object({
-    available: z.boolean(),
-    total: z.number().int().nonnegative(),
-    running: z.number().int().nonnegative(),
-    top: z.array(processSchema).max(6),
-  }),
-  runtime: z.object({
-    pid: z.number().int().positive(),
-    nodeVersion: z.string(),
-    processUptimeSeconds: z.number(),
-    rssBytes: z.number(),
-    heapUsedBytes: z.number(),
-    heapTotalBytes: z.number(),
-    externalBytes: z.number(),
-  }),
-  health: z.object({
-    status: z.enum(["healthy", "warning", "critical"]),
-    issues: z.array(issueSchema),
-  }),
-  history: z.array(metricPointSchema).max(72),
+export type { ServerSnapshot };
+export {
+  calculateCpuUsage,
+  calculateNetworkRates,
+  parseProcesses,
+} from "./lib/collector.ts";
+
+const machineSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  connected: z.boolean(),
+  isServer: z.boolean(),
 });
 
-export type ServerSnapshot = z.infer<typeof snapshotSchema>;
-type MetricPoint = z.infer<typeof metricPointSchema>;
-type Processes = z.infer<typeof snapshotSchema>["processes"];
+export type Machine = z.infer<typeof machineSchema>;
 
 export const rpcContract = defineRpcContract({
   metrics_snapshot: { input: z.null(), output: snapshotSchema },
   metrics_refresh: { input: z.null(), output: snapshotSchema },
+  machines_list: { input: z.null(), output: z.object({ machines: z.array(machineSchema) }) },
+  machine_snapshot: {
+    input: z.object({ hostId: z.string().min(1), force: z.boolean() }),
+    output: snapshotSchema,
+  },
   monitor_status: { input: z.null(), output: z.object({ enabled: z.boolean(), notifications: z.boolean(), cursor: z.number(), active: z.array(z.object({ sequence: z.number(), type: z.enum(["incident", "recovery"]), metric: z.enum(["cpu", "memory"]), timestamp: z.number(), value: z.number(), peak: z.number(), durationSeconds: z.number(), threshold: z.number() })).max(2), recent: z.array(z.object({ sequence: z.number(), type: z.enum(["incident", "recovery"]), metric: z.enum(["cpu", "memory"]), timestamp: z.number(), value: z.number(), peak: z.number(), durationSeconds: z.number(), threshold: z.number() })).max(32) }) },
 });
 
-const ROOT_MOUNT = "/";
-const HISTORY_LIMIT = 72;
-const execFileAsync = promisify(execFile);
-
-interface CpuTimes { idle: number; total: number }
-interface NetworkTotals { interface: string; rxBytes: number; txBytes: number }
-interface MemoryDetails {
-  availableBytes: number;
-  cachedBytes: number;
-  buffersBytes: number;
-  swapTotalBytes: number;
-  swapUsedBytes: number;
-}
-
-function clampPercentage(value: number): number {
-  return Math.min(100, Math.max(0, value));
-}
-
-export function calculateNetworkRates(previous: NetworkTotals | null, current: NetworkTotals, elapsedSeconds: number | null) {
-  if (!previous || previous.interface !== current.interface || elapsedSeconds === null || !Number.isFinite(elapsedSeconds) || elapsedSeconds <= 0 || current.rxBytes < previous.rxBytes || current.txBytes < previous.txBytes) {
-    return { rxBytesPerSecond: null, txBytesPerSecond: null };
-  }
-  return { rxBytesPerSecond: (current.rxBytes - previous.rxBytes) / elapsedSeconds, txBytesPerSecond: (current.txBytes - previous.txBytes) / elapsedSeconds };
-}
-
-export function calculateCpuUsage(previous: CpuTimes | null, current: CpuTimes): number | null {
-  if (previous === null) return null;
-  const idleDelta = current.idle - previous.idle;
-  const totalDelta = current.total - previous.total;
-  if (totalDelta <= 0 || idleDelta < 0 || idleDelta > totalDelta) return null;
-  return clampPercentage(((totalDelta - idleDelta) / totalDelta) * 100);
-}
-
-function cpuTimesFor(cpu: ReturnType<typeof cpus>[number]): CpuTimes {
-  return {
-    idle: cpu.times.idle,
-    total: Object.values(cpu.times).reduce((sum, value) => sum + value, 0),
-  };
-}
-
-function readCpuTimes(cpuList: ReturnType<typeof cpus>): CpuTimes {
-  return cpuList.map(cpuTimesFor).reduce(
-    (result, current) => ({ idle: result.idle + current.idle, total: result.total + current.total }),
-    { idle: 0, total: 0 },
-  );
-}
-
-async function readMemoryDetails(signal: AbortSignal): Promise<MemoryDetails> {
-  const fallbackAvailable = freemem();
-  const fallback: MemoryDetails = {
-    availableBytes: fallbackAvailable,
-    cachedBytes: 0,
-    buffersBytes: 0,
-    swapTotalBytes: 0,
-    swapUsedBytes: 0,
-  };
-  if (platform() !== "linux") return fallback;
-  try {
-    const source = await readFile("/proc/meminfo", { encoding: "utf8", signal });
-    const values = new Map<string, number>();
-    for (const line of source.split("\n")) {
-      const match = /^(\w+):\s+(\d+)\s+kB$/.exec(line.trim());
-      if (match) values.set(match[1], Number(match[2]) * 1024);
-    }
-    const swapTotalBytes = values.get("SwapTotal") ?? 0;
-    const swapFreeBytes = values.get("SwapFree") ?? 0;
-    return {
-      availableBytes: values.get("MemAvailable") ?? fallbackAvailable,
-      cachedBytes: (values.get("Cached") ?? 0) + (values.get("SReclaimable") ?? 0),
-      buffersBytes: values.get("Buffers") ?? 0,
-      swapTotalBytes,
-      swapUsedBytes: Math.max(0, swapTotalBytes - swapFreeBytes),
-    };
-  } catch {
-    return fallback;
-  }
-}
-
-async function readDisk() {
-  try {
-    const stats = await statfs(ROOT_MOUNT);
-    const totalBytes = stats.blocks * stats.bsize;
-    const usedBytes = (stats.blocks - stats.bfree) * stats.bsize;
-    const freeBytes = stats.bavail * stats.bsize;
-    return {
-      mount: ROOT_MOUNT,
-      totalBytes,
-      usedBytes,
-      freeBytes,
-      usagePercent: totalBytes === 0 ? 0 : clampPercentage((usedBytes / totalBytes) * 100),
-    };
-  } catch {
-    return null;
-  }
-}
-
-async function readNetworkTotals(signal: AbortSignal): Promise<NetworkTotals | null> {
-  if (platform() !== "linux") return null;
-  try {
-    const source = await readFile("/proc/net/dev", { encoding: "utf8", signal });
-    const candidates = source.split("\n").slice(2).map((line) => {
-      const [rawName, rawStats] = line.split(":");
-      if (!rawName || !rawStats) return null;
-      const name = rawName.trim();
-      const stats = rawStats.trim().split(/\s+/).map(Number);
-      if (name === "lo" || stats.length < 9 || !Number.isFinite(stats[0]) || !Number.isFinite(stats[8]) || stats[0] < 0 || stats[8] < 0) return null;
-      return { interface: name, rxBytes: stats[0] ?? 0, txBytes: stats[8] ?? 0 };
-    }).filter((value): value is NetworkTotals => value !== null);
-    return candidates.sort(
-      (left, right) => right.rxBytes + right.txBytes - left.rxBytes - left.txBytes,
-    )[0] ?? null;
-  } catch {
-    return null;
-  }
-}
-
-export function parseProcesses(source: string): Processes {
-  const rows = source.split("\n").flatMap((line) => {
-    // comm comes last: executable names may contain whitespace. Never read cmdline.
-    const match = /^\s*(\d+)\s+([\d.]+)\s+([\d.]+)\s+(\d+)\s+(\S+)\s+(.+?)\s*$/.exec(line);
-    if (!match || match[6] === "ps") return [];
-    const [pid, cpuPercent, memoryPercent, rssKiB] = match.slice(1, 5).map(Number);
-    if (!Number.isSafeInteger(pid) || pid <= 0 || ![cpuPercent, memoryPercent, rssKiB * 1024].every(Number.isFinite)) return [];
-    return [{ pid, name: match[6].slice(0, 128), cpuPercent, memoryPercent, rssBytes: rssKiB * 1024, running: match[5].startsWith("R") }];
-  });
-  return {
-    available: true,
-    total: rows.length,
-    running: rows.filter((row) => row.running).length,
-    top: rows.sort((a, b) => b.cpuPercent - a.cpuPercent || a.pid - b.pid).slice(0, 6).map(({ running: _running, ...row }) => row),
-  };
-}
-
-async function readProcesses(signal: AbortSignal): Promise<Processes> {
-  try {
-    const { stdout } = await execFileAsync(
-      "ps",
-      ["-eo", "pid=,%cpu=,%mem=,rss=,stat=,comm="],
-      { timeout: 1500, maxBuffer: 512 * 1024, signal, env: { ...process.env, LC_ALL: "C" } },
-    );
-    const processes = parseProcesses(stdout);
-    if (platform() === "linux") {
-      // Node can rename comm to MainThread. Resolve six symlinks, not command-line
-      // contents (which can be large or include credentials and arguments).
-      await Promise.all(processes.top.map(async (entry) => {
-        try { entry.name = basename((await readlink(`/proc/${entry.pid}/exe`)).replace(/ \(deleted\)$/, "")).slice(0, 128); }
-        catch { /* The process may have exited, or ptrace permissions may deny access. */ }
-      }));
-    }
-    return processes;
-  } catch {
-    return { available: false, total: 0, running: 0, top: [] };
-  }
-}
-
-function assessHealth(
-  cpuPercent: number | null,
-  memoryPercent: number,
-  diskPercent: number | null,
-  fiveMinuteLoad: number,
-  coreCount: number,
-): ServerSnapshot["health"] {
-  const issues: ServerSnapshot["health"]["issues"] = [];
-  const addThresholdIssue = (label: string, value: number) => {
-    if (value >= 95) issues.push({ severity: "critical", label, message: `${label} is at ${value.toFixed(1)}%.` });
-    else if (value >= 85) issues.push({ severity: "warning", label, message: `${label} is at ${value.toFixed(1)}%.` });
-  };
-  if (cpuPercent !== null) addThresholdIssue("CPU", cpuPercent);
-  addThresholdIssue("Memory", memoryPercent);
-  if (diskPercent !== null) addThresholdIssue("Disk", diskPercent);
-  const normalizedLoad = fiveMinuteLoad / coreCount;
-  if (normalizedLoad >= 1.5) {
-    issues.push({ severity: "critical", label: "System load", message: `Five-minute load is ${fiveMinuteLoad.toFixed(2)} across ${coreCount} cores.` });
-  } else if (normalizedLoad >= 1) {
-    issues.push({ severity: "warning", label: "System load", message: `Five-minute load is ${fiveMinuteLoad.toFixed(2)} across ${coreCount} cores.` });
-  }
-  return {
-    status: issues.some((issue) => issue.severity === "critical") ? "critical" : issues.length > 0 ? "warning" : "healthy",
-    issues,
-  };
-}
+const MACHINE_TIMEOUT_MS = 8000;
 
 export default async function plugin(bb: BbPluginApi) {
   const settings = bb.settings.define({
@@ -333,108 +90,13 @@ export default async function plugin(bb: BbPluginApi) {
   });
   bb.background.service("pressure-monitor", { start: (signal) => monitor.start(signal) });
 
-  let previousCpuTimes: CpuTimes | null = null;
-  let previousPerCoreTimes: CpuTimes[] | null = null;
-  let previousNetworkTotals: NetworkTotals | null = null;
-  let previousNetworkTimestamp: number | null = null;
-  const history: MetricPoint[] = [];
-
-  async function collect(signal: AbortSignal): Promise<ServerSnapshot> {
-    const cpuList = cpus();
-    const cpuTimes = readCpuTimes(cpuList);
-    const perCoreTimes = cpuList.map(cpuTimesFor);
-    const sameCoreCount = previousPerCoreTimes?.length === perCoreTimes.length;
-    const usagePercent = calculateCpuUsage(sameCoreCount ? previousCpuTimes : null, cpuTimes);
-    const perCoreUsagePercent = perCoreTimes.map((current, index) =>
-      calculateCpuUsage(sameCoreCount ? previousPerCoreTimes?.[index] ?? null : null, current),
-    );
-    previousCpuTimes = cpuTimes;
-    previousPerCoreTimes = perCoreTimes;
-
-    const [memoryDetails, disk, networkReading, processes] = await Promise.all([
-      readMemoryDetails(signal), readDisk(), readNetworkTotals(signal).then((totals) => ({ totals, time: performance.now() })), readProcesses(signal),
-    ]);
-    signal.throwIfAborted();
-    const totalBytes = totalmem();
-    const freeBytes = freemem();
-    const availableBytes = Math.min(totalBytes, Math.max(0, memoryDetails.availableBytes));
-    const usedBytes = totalBytes - availableBytes;
-    const memoryPercent = totalBytes === 0 ? 0 : clampPercentage((usedBytes / totalBytes) * 100);
-    const loads = loadavg();
-    const coreCount = Math.max(1, cpuList.length);
-    const memoryUsage = process.memoryUsage();
-    const timestamp = Date.now();
-    const { totals: networkTotals, time: networkTimestamp } = networkReading;
-    const elapsedSeconds = previousNetworkTimestamp === null ? null : (networkTimestamp - previousNetworkTimestamp) / 1000;
-    const network = networkTotals === null ? null : {
-      interface: networkTotals.interface,
-      ...calculateNetworkRates(previousNetworkTotals, networkTotals, elapsedSeconds),
-      rxTotalBytes: networkTotals.rxBytes,
-      txTotalBytes: networkTotals.txBytes,
-    };
-    previousNetworkTotals = networkTotals;
-    previousNetworkTimestamp = networkTimestamp;
-
-    history.push({
-      timestamp,
-      cpuPercent: usagePercent,
-      memoryPercent,
-      networkRxBytesPerSecond: network?.rxBytesPerSecond ?? null,
-      networkTxBytesPerSecond: network?.txBytesPerSecond ?? null,
-    });
-    if (history.length > HISTORY_LIMIT) history.splice(0, history.length - HISTORY_LIMIT);
-
-    const snapshot: ServerSnapshot = {
-      timestamp: new Date(timestamp).toISOString(),
-      refreshIntervalMs,
-      host: { hostname: hostname(), platform: platform(), release: release(), arch: arch(), uptimeSeconds: uptime() },
-      cpu: {
-        model: cpuList[0]?.model.trim() || "Unknown CPU",
-        cores: coreCount,
-        speedMHz: cpuList.length === 0 ? 0 : cpuList.reduce((sum, cpu) => sum + cpu.speed, 0) / cpuList.length,
-        usagePercent,
-        perCoreUsagePercent,
-        loadAverage: [loads[0] ?? 0, loads[1] ?? 0, loads[2] ?? 0],
-      },
-      memory: {
-        totalBytes,
-        usedBytes,
-        freeBytes,
-        availableBytes,
-        cachedBytes: memoryDetails.cachedBytes,
-        buffersBytes: memoryDetails.buffersBytes,
-        swapTotalBytes: memoryDetails.swapTotalBytes,
-        swapUsedBytes: memoryDetails.swapUsedBytes,
-        usagePercent: memoryPercent,
-      },
-      disk,
-      network,
-      processes,
-      runtime: {
-        pid: process.pid,
-        nodeVersion: process.version,
-        processUptimeSeconds: process.uptime(),
-        rssBytes: memoryUsage.rss,
-        heapUsedBytes: memoryUsage.heapUsed,
-        heapTotalBytes: memoryUsage.heapTotal,
-        externalBytes: memoryUsage.external,
-      },
-      health: assessHealth(usagePercent, memoryPercent, disk?.usagePercent ?? null, loads[1] ?? 0, coreCount),
-      history: [...history],
-    };
-    return snapshot;
-  }
+  const collector = createCollector(() => refreshIntervalMs);
+  const collect = collector.collect;
 
   const sampler = createDemandSampler({
     collect,
     intervalMs: () => refreshIntervalMs,
-    reset() {
-      previousCpuTimes = null;
-      previousPerCoreTimes = null;
-      previousNetworkTotals = null;
-      previousNetworkTimestamp = null;
-      history.length = 0;
-    },
+    reset: collector.reset,
   });
   const sample = async () => {
     const snapshot = await sampler.sample();
@@ -442,9 +104,46 @@ export default async function plugin(bb: BbPluginApi) {
     return snapshot.refreshIntervalMs === refreshIntervalMs ? snapshot : { ...snapshot, refreshIntervalMs };
   };
 
+  const hostClient = bb.hosts.experimental_client({ contract: hostContract });
+
+  const primaryHostId = async (): Promise<string | null> =>
+    (await bb.sdk.system.config()).primaryHostId ?? null;
+
+  const listMachines = async (): Promise<Machine[]> => {
+    const [hosts, serverHostId] = await Promise.all([
+      bb.sdk.hosts.list({ type: "persistent" }),
+      primaryHostId(),
+    ]);
+    return hosts
+      .map((host) => ({
+        id: host.id,
+        name: host.name,
+        connected: host.status === "connected",
+        isServer: host.id === serverHostId,
+      }))
+      .sort(
+        (left, right) =>
+          Number(right.isServer) - Number(left.isServer) ||
+          left.name.localeCompare(right.name),
+      );
+  };
+
+  const machineSnapshot = async (hostId: string, force: boolean) => {
+    if (hostId === (await primaryHostId())) {
+      return force ? sampler.sample(true) : sample();
+    }
+    return hostClient.call(
+      "machine_snapshot",
+      { refreshIntervalMs, force },
+      { hostId, timeoutMs: MACHINE_TIMEOUT_MS },
+    );
+  };
+
   bb.rpc.register(rpcContract, {
     metrics_snapshot: () => sample(),
     metrics_refresh: () => sampler.sample(true),
+    machines_list: async () => ({ machines: await listMachines() }),
+    machine_snapshot: ({ hostId, force }) => machineSnapshot(hostId, force),
     monitor_status: () => monitor.status(),
   });
 
