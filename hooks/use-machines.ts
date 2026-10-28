@@ -15,6 +15,27 @@ function readSelectedMachine(): string {
   }
 }
 
+const MACHINES_CACHE_KEY = "beacon:machines";
+
+function readCachedMachines(): Machine[] | null {
+  try {
+    const stored = globalThis.localStorage?.getItem(MACHINES_CACHE_KEY);
+    if (stored == null) return null;
+    const parsed: unknown = JSON.parse(stored);
+    return Array.isArray(parsed) ? (parsed as Machine[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedMachines(machines: Machine[]): void {
+  try {
+    globalThis.localStorage?.setItem(MACHINES_CACHE_KEY, JSON.stringify(machines));
+  } catch {
+    return;
+  }
+}
+
 function writeSelectedMachine(machineId: string): void {
   try {
     globalThis.localStorage?.setItem(SELECTED_MACHINE_KEY, machineId);
@@ -29,7 +50,7 @@ export function machineKey(machine: Machine): string {
 
 export function useMachines() {
   const rpc = useRpc<typeof rpcContract>();
-  const [machines, setMachines] = useState<Machine[] | null>(null);
+  const [machines, setMachines] = useState<Machine[] | null>(readCachedMachines);
   const [selected, setSelectedState] = useState(readSelectedMachine);
 
   const latestRequest = useRef(0);
@@ -38,7 +59,10 @@ export function useMachines() {
     for (let attempt = 0; attempt < LIST_ATTEMPTS; attempt += 1) {
       try {
         const { machines: next } = await rpc.call("machines_list", null);
-        if (request === latestRequest.current) setMachines(next);
+        if (request === latestRequest.current) {
+          setMachines(next);
+          writeCachedMachines(next);
+        }
         return;
       } catch {
         await new Promise((resolve) => setTimeout(resolve, LIST_RETRY_MS * (attempt + 1)));
