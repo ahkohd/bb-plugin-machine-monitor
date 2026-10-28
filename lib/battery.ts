@@ -154,15 +154,13 @@ async function readLinuxBattery(): Promise<BatteryInfo | null> {
   return null;
 }
 
-const MAC_BATTERY_CACHE_MS = 10_000;
 const MAC_NO_BATTERY_CACHE_MS = 10 * 60_000;
 const MAC_BATTERY_STALE_MS = 2 * 60_000;
 let macBatteryReading: { battery: BatteryInfo | null; readAt: number } | null = null;
 
 async function readMacBattery(signal: AbortSignal): Promise<BatteryInfo | null> {
   const age = macBatteryReading ? Date.now() - macBatteryReading.readAt : Infinity;
-  const cacheFor = macBatteryReading?.battery ? MAC_BATTERY_CACHE_MS : MAC_NO_BATTERY_CACHE_MS;
-  if (macBatteryReading && age < cacheFor) return macBatteryReading.battery;
+  if (macBatteryReading?.battery === null && age < MAC_NO_BATTERY_CACHE_MS) return null;
   try {
     const { stdout } = await execFileAsync("ioreg", ["-rn", "AppleSmartBattery"], { timeout: 1500, maxBuffer: 1024 * 1024, signal });
     const battery = parseMacBattery(stdout);
