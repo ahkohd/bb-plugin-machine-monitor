@@ -92,7 +92,7 @@ export function MachinePicker({
         className="flex h-6 min-w-0 max-w-full shrink items-center gap-1 rounded-md px-1.5 text-xs font-medium text-sidebar-foreground hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring disabled:opacity-50 data-[state=open]:bg-sidebar-accent"
       >
         <span className="min-w-0 truncate">{displayName(machines, selected)}</span>
-        <Icon name="ChevronDown" className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+        <Icon name="ChevronDown" className="size-4 shrink-0 text-muted-foreground" aria-hidden />
       </PopoverTrigger>
       <PopoverContent className="w-60 p-0" side="top">
         <div className="border-b border-border p-1">

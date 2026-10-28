@@ -139,7 +139,7 @@ function ReloadButton({ onReload, reloading, updatedAt }: { onReload: () => void
 function CollapseButton({ onCollapse }: { onCollapse: () => void }) {
   return (
     <HeaderButton label="Hide machine status" tooltip="Hide" onClick={onCollapse}>
-      <Icon name="ChevronDown" className="size-3.5" aria-hidden />
+      <Icon name="ChevronDown" className="size-4" aria-hidden />
     </HeaderButton>
   );
 }

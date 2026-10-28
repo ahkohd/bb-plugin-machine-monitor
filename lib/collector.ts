@@ -101,7 +101,38 @@ async function readDisk() {
   }
 }
 
+export function parseNetstatLinks(source: string): NetworkTotals | null {
+  const candidates = source.split("\n").flatMap((line) => {
+    const fields = line.trim().split(/\s+/);
+    if (fields.length < 10 || !fields[2]?.startsWith("<Link#")) return [];
+    const name = fields[0].replace(/\*$/, "");
+    if (name.startsWith("lo")) return [];
+    const rxBytes = Number(fields[fields.length - 5]);
+    const txBytes = Number(fields[fields.length - 2]);
+    if (!Number.isSafeInteger(rxBytes) || !Number.isSafeInteger(txBytes) || rxBytes < 0 || txBytes < 0) return [];
+    return [{ interface: name, rxBytes, txBytes }];
+  });
+  return candidates.sort(
+    (left, right) => right.rxBytes + right.txBytes - left.rxBytes - left.txBytes,
+  )[0] ?? null;
+}
+
+async function readMacNetworkTotals(signal: AbortSignal): Promise<NetworkTotals | null> {
+  try {
+    const { stdout } = await execFileAsync("netstat", ["-ibn"], {
+      timeout: 1500,
+      maxBuffer: 512 * 1024,
+      signal,
+      env: { ...process.env, LC_ALL: "C" },
+    });
+    return parseNetstatLinks(stdout);
+  } catch {
+    return null;
+  }
+}
+
 async function readNetworkTotals(signal: AbortSignal): Promise<NetworkTotals | null> {
+  if (platform() === "darwin") return readMacNetworkTotals(signal);
   if (platform() !== "linux") return null;
   try {
     const source = await readFile("/proc/net/dev", { encoding: "utf8", signal });

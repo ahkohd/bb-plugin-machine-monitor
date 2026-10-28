@@ -18,6 +18,7 @@ export type { ServerSnapshot };
 export {
   calculateCpuUsage,
   calculateNetworkRates,
+  parseNetstatLinks,
   parseProcesses,
 } from "./lib/collector.ts";
 
