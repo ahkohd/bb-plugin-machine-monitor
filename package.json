@@ -2,7 +2,7 @@
   "name": "bb-plugin-machine-status",
   "version": "0.1.2",
   "type": "module",
-  "description": "See CPU, memory, disk, and process pressure on the BB server from the sidebar, without leaving the workspace.",
+  "description": "See CPU, GPU, memory, disk, network, battery, Tailscale and top processes for any of your bb machines from the sidebar.",
   "repository": {
     "type": "git",
     "url": "https://github.com/ahkohd/bb-plugin-machine-status.git"
@@ -18,7 +18,7 @@
   },
   "bb": {
     "name": "Machine status",
-    "description": "See CPU, memory, disk, and process pressure on the BB server from the sidebar, without leaving the workspace.",
+    "description": "See CPU, GPU, memory, disk, network, battery, Tailscale and top processes for any of your bb machines from the sidebar.",
     "branding": {
       "icon": "./assets/icon.svg"
     },
