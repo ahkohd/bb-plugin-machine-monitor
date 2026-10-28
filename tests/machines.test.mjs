@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createFakePluginHost, makeHostResponse } from "@get-bb/plugin-sdk/testing";
-import plugin, { parseNetstatLinks } from "../server.ts";
+import plugin, { parseNetstatLinks, parseWindowsNetstat } from "../server.ts";
 import hostEntry from "../host.ts";
 
 const SERVER_HOST = "host_server";
@@ -90,4 +90,17 @@ test("a remote machine reports the new refresh interval even from its cache", as
   await hostEntry.handlers.machine_snapshot({ refreshIntervalMs: 5000, force: true }, {});
   const cached = await hostEntry.handlers.machine_snapshot({ refreshIntervalMs: 60_000, force: false }, {});
   assert.equal(cached.refreshIntervalMs, 60_000);
+});
+
+test("WSL reads Windows' network totals from netstat -e", () => {
+  const output = [
+    "Interface Statistics",
+    "",
+    "                           Received            Sent",
+    "",
+    "Bytes                    2217282166      3811487087",
+    "Unicast packets            17785704        26580608",
+  ].join("\r\n");
+  assert.deepEqual(parseWindowsNetstat(output), { interface: "Windows", rxBytes: 2217282166, txBytes: 3811487087 });
+  assert.equal(parseWindowsNetstat("The system cannot find the path specified."), null);
 });
