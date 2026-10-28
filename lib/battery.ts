@@ -51,6 +51,7 @@ function positiveNumber(text: string | undefined): number | null {
 
 export function parseMacBattery(source: string): BatteryInfo | null {
   const fields = ioregFields(source);
+  if (fields.get("BatteryInstalled") === "No") return null;
   const currentCapacity = Number(fields.get("CurrentCapacity"));
   if (!fields.has("CurrentCapacity") || !Number.isFinite(currentCapacity)) return null;
   const maxCapacity = positiveNumber(fields.get("MaxCapacity"));

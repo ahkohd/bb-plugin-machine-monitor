@@ -84,6 +84,11 @@ test("an Intel Mac's capacity in mAh becomes a percentage", () => {
   assert.equal(intel.percent, 40);
 });
 
+test("a desktop Mac's empty battery record is no battery", () => {
+  const macStudio = ['"CurrentCapacity" = 0', '"MaxCapacity" = 0', '"BatteryInstalled" = No', '"ExternalConnected" = Yes'].join("\n");
+  assert.equal(parseMacBattery(macStudio), null);
+});
+
 test("reads the sensor helper's output and rejects nonsense", () => {
   assert.deepEqual(parseSensorOutput('{"cpuTempC":51.76,"gpuTempC":45.68,"cpuWatts":1.10,"gpuWatts":null}'), {
     cpuTempC: 51.76,
