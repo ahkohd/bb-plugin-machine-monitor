@@ -96,8 +96,6 @@ export type ServerSnapshot = z.infer<typeof snapshotSchema>;
 export type MetricPoint = z.infer<typeof metricPointSchema>;
 export type Processes = z.infer<typeof snapshotSchema>["processes"];
 
-export const SNAPSHOT_SCOPES = ["server", "machine"] as const;
-
 export const hostContract = defineRpcContract({
   machine_snapshot: {
     input: z.object({

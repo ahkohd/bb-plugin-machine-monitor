@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   experimental_copyToClipboard as copyToClipboard,
   experimental_Icon as Icon,
@@ -11,16 +11,20 @@ const COPIED_MS = 1500;
 
 function CopyValue({ label, value, title }: { label: string; value: string; title?: string }) {
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
+  const [hovered, setHovered] = useState(false);
+  useEffect(() => {
+    if (state === "idle") return;
+    const timer = setTimeout(() => setState("idle"), COPIED_MS);
+    return () => clearTimeout(timer);
+  }, [state]);
   const copy = async () => {
-    const copied = await copyToClipboard({ text: value });
-    setState(copied ? "copied" : "failed");
-    setTimeout(() => setState("idle"), COPIED_MS);
+    setState((await copyToClipboard({ text: value })) ? "copied" : "failed");
   };
   const tooltip = state === "copied" ? "Copied" : state === "failed" ? "Could not copy" : (title ?? `Copy ${label.toLowerCase()}`);
   return (
     <div className="flex items-center justify-between gap-2 text-xs">
       <span className="shrink-0 text-muted-foreground">{label}</span>
-      <Tooltip delayDuration={350} disableHoverableContent open={state === "idle" ? undefined : true}>
+      <Tooltip delayDuration={350} disableHoverableContent open={hovered || state !== "idle"} onOpenChange={setHovered}>
         <TooltipTrigger asChild>
           <button
             type="button"
