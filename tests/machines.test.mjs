@@ -53,13 +53,6 @@ test("reads another machine through its host entry with the current refresh inte
   );
 });
 
-test("reads the bb server directly without a host call", async (t) => {
-  const harness = await startBeacon(t, async () => { throw new Error("should not be called"); });
-  const snapshot = await harness.behavior.callRpc("machine_snapshot", { hostId: SERVER_HOST, force: false });
-  assert.ok(snapshot.cpu.cores > 0);
-  assert.equal(harness.inspection.experimental_hostRpcCalls.length, 0);
-});
-
 test("the host entry returns a valid snapshot and keeps CPU history between calls", async () => {
   const first = await hostEntry.handlers.machine_snapshot({ refreshIntervalMs: 5000, force: true }, {});
   const second = await hostEntry.handlers.machine_snapshot({ refreshIntervalMs: 5000, force: true }, {});

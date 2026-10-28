@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   experimental_copyToClipboard as copyToClipboard,
   experimental_Icon as Icon,
@@ -12,9 +12,13 @@ const COPIED_MS = 1500;
 function CopyValue({ label, value, title }: { label: string; value: string; title?: string }) {
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
   const [hovered, setHovered] = useState(false);
+  const pointerInside = useRef(false);
   useEffect(() => {
     if (state === "idle") return;
-    const timer = setTimeout(() => setState("idle"), COPIED_MS);
+    const timer = setTimeout(() => {
+      setState("idle");
+      setHovered(pointerInside.current);
+    }, COPIED_MS);
     return () => clearTimeout(timer);
   }, [state]);
   const copy = async () => {
@@ -29,6 +33,8 @@ function CopyValue({ label, value, title }: { label: string; value: string; titl
           <button
             type="button"
             onClick={() => void copy()}
+            onPointerEnter={() => { pointerInside.current = true; }}
+            onPointerLeave={() => { pointerInside.current = false; }}
             aria-label={`Copy ${label.toLowerCase()} ${value}`}
             className="group/copy -mr-1 flex min-w-0 items-center gap-1 rounded-md px-1 py-0.5 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
           >

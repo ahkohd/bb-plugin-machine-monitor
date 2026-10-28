@@ -53,8 +53,32 @@ export function readCpuTimes(cpuList: ReturnType<typeof cpus>): CpuTimes {
   );
 }
 
+const RECLAIMABLE_PAGE_KINDS = ["free", "inactive", "speculative", "purgeable"] as const;
+
+export function parseVmStatAvailableBytes(source: string): number | null {
+  const pageSize = Number(/page size of (\d+) bytes/.exec(source)?.[1]);
+  if (!Number.isSafeInteger(pageSize) || pageSize <= 0) return null;
+  let pages = 0;
+  for (const kind of RECLAIMABLE_PAGE_KINDS) {
+    const count = Number(new RegExp(`^Pages ${kind}:\\s+(\\d+)\\.`, "m").exec(source)?.[1]);
+    if (!Number.isSafeInteger(count)) return null;
+    pages += count;
+  }
+  return pages * pageSize;
+}
+
+export async function readAvailableMemoryBytes(signal: AbortSignal): Promise<number> {
+  if (platform() !== "darwin") return freemem();
+  try {
+    const { stdout } = await execFileAsync("vm_stat", [], { timeout: 1500, maxBuffer: 64 * 1024, signal, env: { ...process.env, LC_ALL: "C" } });
+    return Math.min(totalmem(), parseVmStatAvailableBytes(stdout) ?? freemem());
+  } catch {
+    return freemem();
+  }
+}
+
 async function readMemoryDetails(signal: AbortSignal): Promise<MemoryDetails> {
-  const fallbackAvailable = freemem();
+  const fallbackAvailable = await readAvailableMemoryBytes(signal);
   const fallback: MemoryDetails = {
     availableBytes: fallbackAvailable,
     cachedBytes: 0,

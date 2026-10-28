@@ -1,3 +1,5 @@
+import { MAX_BACKOFF_STEPS, backoffDelayMs, pollDelayMs } from "./cadence.ts";
+
 /** Serialized polling with stale-response protection across hide/show and disposal. */
 export function createVisiblePoller<T>(options: {
   load: () => Promise<T>;
@@ -22,12 +24,12 @@ export function createVisiblePoller<T>(options: {
       const value = await options.load();
       if (!active || disposed || requestGeneration !== generation) return;
       failures = 0;
-      delay = Math.min(60_000, Math.max(2000, options.intervalMs(value) || 5000));
+      delay = pollDelayMs(options.intervalMs(value));
       options.receive(value);
     } catch (error) {
       if (!active || disposed || requestGeneration !== generation) return;
-      failures = Math.min(failures + 1, 5);
-      delay = Math.min(60_000, 5000 * 2 ** (failures - 1));
+      failures = Math.min(failures + 1, MAX_BACKOFF_STEPS);
+      delay = backoffDelayMs(failures);
       options.error(error);
     } finally {
       pending = false;

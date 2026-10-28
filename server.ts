@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { cpus, freemem, loadavg, platform, totalmem } from "node:os";
+import { cpus, loadavg, platform, totalmem } from "node:os";
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { hostContract, snapshotSchema, type ServerSnapshot } from "./contract.ts";
@@ -7,6 +7,7 @@ import {
   calculateCpuUsage,
   clampPercentage,
   createCollector,
+  readAvailableMemoryBytes,
   readCpuTimes,
   type CpuTimes,
 } from "./lib/collector.ts";
@@ -19,6 +20,7 @@ export {
   calculateCpuUsage,
   calculateNetworkRates,
   parseNetstatLinks,
+  parseVmStatAvailableBytes,
   parseProcesses,
 } from "./lib/collector.ts";
 
@@ -79,7 +81,7 @@ export default async function plugin(bb: BbPluginApi) {
       availableBytes = Number(available[1]) * 1024;
     } else {
       current = readCpuTimes(cpus());
-      availableBytes = freemem();
+      availableBytes = await readAvailableMemoryBytes(signal);
     }
     signal.throwIfAborted();
     const cpu = calculateCpuUsage(monitorCpu, current);
@@ -115,10 +117,7 @@ export default async function plugin(bb: BbPluginApi) {
   let serverHostId: Promise<string | null> | null = null;
   const primaryHostId = (): Promise<string | null> => {
     serverHostId ??= bb.sdk.system.config().then(
-      (config) => {
-        if (!config.primaryHostId) serverHostId = null;
-        return config.primaryHostId ?? null;
-      },
+      (config) => config.primaryHostId ?? null,
       (error: unknown) => {
         serverHostId = null;
         throw error;
@@ -149,16 +148,8 @@ export default async function plugin(bb: BbPluginApi) {
       );
   };
 
-  const machineSnapshot = async (hostId: string, force: boolean) => {
-    if (hostId === (await primaryHostId())) {
-      return sample(force);
-    }
-    return hostClient.call(
-      "machine_snapshot",
-      { refreshIntervalMs, force },
-      { hostId },
-    );
-  };
+  const machineSnapshot = (hostId: string, force: boolean) =>
+    hostClient.call("machine_snapshot", { refreshIntervalMs, force }, { hostId });
 
   bb.rpc.register(rpcContract, {
     metrics_snapshot: () => sample(),

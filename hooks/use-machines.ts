@@ -79,20 +79,24 @@ export function useMachines() {
     return () => { latestRequest.current += 1; };
   }, [refresh]);
 
-  const selectedExists =
-    selected === SERVER_MACHINE ||
-    !listIsFresh ||
-    machines === null ||
-    machines.some((machine) => machineKey(machine) === selected);
-
   const setSelected = useCallback((machineId: string) => {
     setSelectedState(machineId);
     writeSelectedMachine(machineId);
   }, []);
 
+  const selectedIsGone =
+    listIsFresh &&
+    selected !== SERVER_MACHINE &&
+    machines !== null &&
+    !machines.some((machine) => machineKey(machine) === selected);
+
+  useEffect(() => {
+    if (selectedIsGone) setSelected(SERVER_MACHINE);
+  }, [selectedIsGone, setSelected]);
+
   return {
     machines,
-    selected: selectedExists ? selected : SERVER_MACHINE,
+    selected: selectedIsGone ? SERVER_MACHINE : selected,
     setSelected,
     refresh,
   };

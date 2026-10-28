@@ -45,6 +45,7 @@ export function useServerSnapshot(machineId: string) {
     const source = sourceFor(machineId);
     setReading({ machineId, snapshot: source.snapshot() });
     setError(null);
+    setReloading(false);
     let intersecting = false;
     let pageHidden = false;
     const poller = createVisiblePoller({
