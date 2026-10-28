@@ -104,3 +104,10 @@ test("WSL reads Windows' network totals from netstat -e", () => {
   assert.deepEqual(parseWindowsNetstat(output), { interface: "Windows", rxBytes: 2217282166, txBytes: 3811487087 });
   assert.equal(parseWindowsNetstat("The system cannot find the path specified."), null);
 });
+
+test("load errors read as plain messages without transport details", async () => {
+  const { loadErrorCopy } = await import("../lib/load-error-copy.ts");
+  assert.equal(loadErrorCopy('rpc "machine_snapshot" failed (HTTP 502)', "lively-summit"), "Can't reach lively-summit.");
+  assert.equal(loadErrorCopy("Host request timed out", "mbp"), "Can't reach mbp.");
+  assert.equal(loadErrorCopy("Unexpected snapshot shape", "mbp"), "Couldn't get stats from mbp.");
+});

@@ -46,7 +46,7 @@ function matchesQuery(machine: Machine, query: string): boolean {
   return machine.name.toLowerCase().includes(query.trim().toLowerCase());
 }
 
-function selectedMachine(machines: Machine[] | null, selected: string): { name: string; kind: MachineKind } {
+export function selectedMachine(machines: Machine[] | null, selected: string): { name: string; kind: MachineKind } {
   const machine = machines?.find((candidate) => machineKey(candidate) === selected);
   if (machine) return { name: machine.name, kind: kindOf(machine) };
   return selected === SERVER_MACHINE

@@ -4,10 +4,11 @@ import type { Machine, ServerSnapshot } from "./server";
 import { SERVER_MACHINE, useServerSnapshot } from "./hooks/use-server-snapshot";
 import { machineKey, useMachines } from "./hooks/use-machines";
 import { PressureNotifications, bindStatusOpener } from "./components/pressure-notifications";
-import { MachinePicker } from "./components/machine-picker";
+import { MachinePicker, selectedMachine } from "./components/machine-picker";
+import { loadErrorCopy } from "./lib/load-error-copy";
 import { TailscaleRows } from "./components/tailscale-section";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowDataTransferVerticalIcon, BatteryChargingIcon, BatteryFullIcon, CpuIcon, GpuIcon, HardDriveIcon, RamMemoryIcon, ServerIcon } from "@hugeicons/core-free-icons";
+import { Alert02Icon, ArrowDataTransferVerticalIcon, BatteryChargingIcon, BatteryFullIcon, CloudOffIcon, CpuIcon, GpuIcon, HardDriveIcon, RamMemoryIcon, ServerIcon } from "@hugeicons/core-free-icons";
 import { BarChart, BigValue, DetailRow, Footnote, LineChart, METRIC_COLORS, MetricSection, Pill, ProgressBar } from "./components/metric-parts";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -46,10 +47,14 @@ function formatDuration(seconds: number): string {
   return `${minutes}m`;
 }
 
-function formatUpdatedAt(value: string): string {
+function formatClockTime(value: string): string | null {
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Updated recently";
-  return `Updated at ${new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(date)}`;
+  return Number.isNaN(date.getTime()) ? null : new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(date);
+}
+
+function formatUpdatedAt(value: string): string {
+  const time = formatClockTime(value);
+  return time ? `Updated at ${time}` : "Updated recently";
 }
 
 
@@ -488,6 +493,30 @@ function MachineHeader({ machines, selected, onSelect, onOpen, actions }: { mach
   );
 }
 
+function lastReadingText(updatedAt: string): string {
+  const time = formatClockTime(updatedAt);
+  return time ? `Showing data from ${time}.` : "Showing the last data.";
+}
+
+function StaleNotice({ message, updatedAt }: { message: string; updatedAt: string }) {
+  return (
+    <div role="status" className="flex items-start gap-1.5 px-3 py-2 text-xs text-subtle-foreground">
+      <HugeiconsIcon icon={Alert02Icon} className="mt-px size-3.5 shrink-0" style={{ color: METRIC_COLORS.warn }} aria-hidden="true" />
+      <span>{message} {lastReadingText(updatedAt)}</span>
+    </div>
+  );
+}
+
+function UnavailableState({ message }: { message: string }) {
+  return (
+    <div role="status" className="flex flex-col items-center gap-1.5 px-3 py-6 text-center">
+      <HugeiconsIcon icon={CloudOffIcon} className="size-5 text-subtle-foreground" aria-hidden="true" />
+      <p className="text-xs text-sidebar-foreground">{message}</p>
+      <p className="text-xs text-subtle-foreground">Trying again while this panel is open.</p>
+    </div>
+  );
+}
+
 function ServerMark({ className }: { className?: string }) {
   return <HugeiconsIcon icon={ServerIcon} className={className} aria-hidden="true" />;
 }
@@ -495,6 +524,7 @@ function ServerMark({ className }: { className?: string }) {
 function StatusDisclosure({ dismiss }: ExperimentalSidebarFooterDisclosureProps) {
   const { machines, selected, setSelected, refresh: refreshMachines } = useMachines();
   const { container, active, snapshot, error, reload, reloading } = useServerSnapshot(selected);
+  const errorMessage = error ? loadErrorCopy(error, selectedMachine(machines, selected).name) : "";
   return (
     <TooltipProvider>
     <div ref={container} data-beacon-shell aria-busy={(active && !snapshot && !error) || reloading} className="w-full min-w-0 divide-y divide-sidebar-border">
@@ -508,10 +538,10 @@ function StatusDisclosure({ dismiss }: ExperimentalSidebarFooterDisclosureProps)
           <CollapseButton onCollapse={dismiss} />
         </>}
       />
-      {error ? <div role="alert" className="px-3 py-2 text-xs text-destructive">Could not refresh: {error}</div> : null}
+      {error && snapshot ? <StaleNotice message={errorMessage} updatedAt={snapshot.timestamp} /> : null}
       {/* The skeleton gives the shell height so the visibility observer can activate polling. */}
       {snapshot ? <StatusPopover snapshot={snapshot} isServer={selected === SERVER_MACHINE} /> : (
-        error ? <div className="p-3 text-xs text-muted-foreground">Machine data unavailable. Retrying while visible.</div> : <LoadingPopover />
+        error ? <UnavailableState message={errorMessage} /> : <LoadingPopover />
       )}
     </div>
     </TooltipProvider>
