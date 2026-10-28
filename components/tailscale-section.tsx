@@ -27,7 +27,7 @@ function CopyValue({ label, value, title }: { label: string; value: string; titl
   const tooltip = state === "copied" ? "Copied" : state === "failed" ? "Could not copy" : (title ?? `Copy ${label.toLowerCase()}`);
   return (
     <div className="flex items-center justify-between gap-2 text-xs">
-      <span className="shrink-0 text-muted-foreground">{label}</span>
+      <span className="shrink-0 text-subtle-foreground">{label}</span>
       <Tooltip delayDuration={350} disableHoverableContent open={hovered || state !== "idle"} onOpenChange={setHovered}>
         <TooltipTrigger asChild>
           <button
@@ -36,7 +36,7 @@ function CopyValue({ label, value, title }: { label: string; value: string; titl
             onPointerEnter={() => { pointerInside.current = true; }}
             onPointerLeave={() => { pointerInside.current = false; }}
             aria-label={`Copy ${label.toLowerCase()} ${value}`}
-            className="group/copy -mr-1 flex min-w-0 items-center gap-1 rounded-md px-1 py-0.5 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+            className="group/copy -mr-1 flex min-w-0 items-center gap-1 rounded-md px-1 py-0.5 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
           >
             <Icon
               name={state === "copied" ? "Check" : "Copy"}

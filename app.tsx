@@ -366,8 +366,8 @@ function ProcessesSection({ snapshot }: { snapshot: ServerSnapshot }) {
     <section aria-label="Top processes" className="min-w-0 p-3">
       <div className="grid grid-cols-[1fr_auto_3rem] items-center gap-x-3 gap-y-1.5 text-xs">
         <span className="font-medium text-sidebar-foreground">Top processes</span>
-        <span className="text-right text-muted-foreground">Memory</span>
-        <span className="text-right text-muted-foreground">% CPU</span>
+        <span className="text-right text-subtle-foreground">Memory</span>
+        <span className="text-right text-subtle-foreground">% CPU</span>
         {processes.available ? processes.top.slice(0, 5).map((process) => (
           <div key={process.pid} className="contents">
             <Tooltip delayDuration={400}>
@@ -376,8 +376,8 @@ function ProcessesSection({ snapshot }: { snapshot: ServerSnapshot }) {
               </TooltipTrigger>
               <TooltipContent side="right" className="text-xs">{process.name} · PID {process.pid}</TooltipContent>
             </Tooltip>
-            <span className="text-right tabular-nums text-muted-foreground">{formatBytes(process.rssBytes)}</span>
-            <span className="text-right tabular-nums" style={{ color: process.cpuPercent >= 50 ? METRIC_COLORS.warnDim : undefined }}>{process.cpuPercent.toFixed(1)}</span>
+            <span className="text-right tabular-nums text-sidebar-foreground">{formatBytes(process.rssBytes)}</span>
+            <span className="text-right tabular-nums text-sidebar-foreground" style={{ color: process.cpuPercent >= 50 ? METRIC_COLORS.warnDim : undefined }}>{process.cpuPercent.toFixed(1)}</span>
           </div>
         )) : <span className="col-span-3 text-muted-foreground">Unavailable</span>}
       </div>
