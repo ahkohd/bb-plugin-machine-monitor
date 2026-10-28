@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+import { basename } from "node:path";
 import plugin, { calculateCpuUsage, calculateNetworkRates, parseProcesses } from "../server.ts";
 
 test("CPU deltas handle warmup, idle, full utilization, and counter resets", () => {
@@ -109,4 +110,10 @@ test("invalid CLI input does not sample, and settings retain enforced bounds", a
   await harness.behavior.setSettings({ refreshIntervalSeconds: 2 });
   const response = await harness.behavior.callRpc("metrics_snapshot", null);
   assert.equal(response.refreshIntervalMs, 2000); assert.equal(response.history.length, 1);
+});
+
+test("long macOS executable paths keep the executable's name", () => {
+  const path = `/Applications/${"Nested.app/Contents/Frameworks/".repeat(6)}Helper (Renderer)`;
+  const result = parseProcesses(` 7 12.0 1.0 100 S ${path}`, basename);
+  assert.equal(result.top[0].name, "Helper (Renderer)");
 });

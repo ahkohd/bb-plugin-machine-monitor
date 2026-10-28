@@ -92,3 +92,9 @@ test("looks up the bb server's host id once, not on every poll", async (t) => {
   await harness.behavior.callRpc("machines_list", null);
   assert.equal(harness.inspection.sdk.callsTo("system.config").length, 1);
 });
+
+test("a remote machine reports the new refresh interval even from its cache", async () => {
+  await hostEntry.handlers.machine_snapshot({ refreshIntervalMs: 5000, force: true }, {});
+  const cached = await hostEntry.handlers.machine_snapshot({ refreshIntervalMs: 60_000, force: false }, {});
+  assert.equal(cached.refreshIntervalMs, 60_000);
+});
