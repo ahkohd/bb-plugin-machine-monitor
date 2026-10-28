@@ -23,6 +23,8 @@
   },
   "include": [
     "server.ts",
+    "host.ts",
+    "contract.ts",
     "app.tsx",
     "components",
     "lib",

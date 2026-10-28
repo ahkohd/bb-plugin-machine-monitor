@@ -154,21 +154,22 @@ async function readLinuxBattery(): Promise<BatteryInfo | null> {
   return null;
 }
 
-const MAC_BATTERY_CACHE_MS = 30_000;
-let macBatteryAbsent = false;
-let macBatteryReading: { battery: BatteryInfo; readAt: number } | null = null;
+const MAC_BATTERY_CACHE_MS = 10_000;
+const MAC_NO_BATTERY_CACHE_MS = 10 * 60_000;
+const MAC_BATTERY_STALE_MS = 2 * 60_000;
+let macBatteryReading: { battery: BatteryInfo | null; readAt: number } | null = null;
 
 async function readMacBattery(signal: AbortSignal): Promise<BatteryInfo | null> {
-  if (macBatteryAbsent) return null;
-  if (macBatteryReading && Date.now() - macBatteryReading.readAt < MAC_BATTERY_CACHE_MS) return macBatteryReading.battery;
+  const age = macBatteryReading ? Date.now() - macBatteryReading.readAt : Infinity;
+  const cacheFor = macBatteryReading?.battery ? MAC_BATTERY_CACHE_MS : MAC_NO_BATTERY_CACHE_MS;
+  if (macBatteryReading && age < cacheFor) return macBatteryReading.battery;
   try {
     const { stdout } = await execFileAsync("ioreg", ["-rn", "AppleSmartBattery"], { timeout: 1500, maxBuffer: 1024 * 1024, signal });
     const battery = parseMacBattery(stdout);
-    macBatteryAbsent = battery === null;
-    macBatteryReading = battery ? { battery, readAt: Date.now() } : null;
+    macBatteryReading = { battery, readAt: Date.now() };
     return battery;
   } catch {
-    return macBatteryReading?.battery ?? null;
+    return macBatteryReading && age < MAC_BATTERY_STALE_MS ? macBatteryReading.battery : null;
   }
 }
 

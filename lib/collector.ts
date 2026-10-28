@@ -14,7 +14,7 @@ const HISTORY_LIMIT = 72;
 const execFileAsync = promisify(execFile);
 
 export interface CpuTimes { idle: number; total: number }
-interface NetworkTotals { interface: string; rxBytes: number; txBytes: number; wrapsAt?: number }
+interface NetworkTotals { interface: string; rxBytes: number; txBytes: number }
 interface MemoryDetails {
   availableBytes: number;
   cachedBytes: number;
@@ -27,20 +27,11 @@ export function clampPercentage(value: number): number {
   return Math.min(100, Math.max(0, value));
 }
 
-function counterDelta(previous: number, current: number, wrapsAt: number | undefined): number | null {
-  if (current >= previous) return current - previous;
-  return wrapsAt === undefined ? null : current + wrapsAt - previous;
-}
-
 export function calculateNetworkRates(previous: NetworkTotals | null, current: NetworkTotals, elapsedSeconds: number | null) {
-  const unmeasured = { rxBytesPerSecond: null, txBytesPerSecond: null };
-  if (!previous || previous.interface !== current.interface || elapsedSeconds === null || !Number.isFinite(elapsedSeconds) || elapsedSeconds <= 0) {
-    return unmeasured;
+  if (!previous || previous.interface !== current.interface || elapsedSeconds === null || !Number.isFinite(elapsedSeconds) || elapsedSeconds <= 0 || current.rxBytes < previous.rxBytes || current.txBytes < previous.txBytes) {
+    return { rxBytesPerSecond: null, txBytesPerSecond: null };
   }
-  const rxDelta = counterDelta(previous.rxBytes, current.rxBytes, current.wrapsAt);
-  const txDelta = counterDelta(previous.txBytes, current.txBytes, current.wrapsAt);
-  if (rxDelta === null || txDelta === null) return unmeasured;
-  return { rxBytesPerSecond: rxDelta / elapsedSeconds, txBytesPerSecond: txDelta / elapsedSeconds };
+  return { rxBytesPerSecond: (current.rxBytes - previous.rxBytes) / elapsedSeconds, txBytesPerSecond: (current.txBytes - previous.txBytes) / elapsedSeconds };
 }
 
 export function calculateCpuUsage(previous: CpuTimes | null, current: CpuTimes): number | null {
@@ -171,17 +162,22 @@ async function readMacNetworkTotals(signal: AbortSignal): Promise<NetworkTotals 
   }
 }
 
-const WINDOWS_NETSTAT = "/mnt/c/Windows/System32/netstat.exe";
+const WINDOWS_NETSH = "/mnt/c/Windows/System32/netsh.exe";
+const LOOPBACK_MTU = 4294967295;
 
-const WINDOWS_COUNTER_RANGE = 2 ** 32;
-
-export function parseWindowsNetstat(source: string): NetworkTotals | null {
-  const byteRow = /^\S.*?\s(\d+)\s+(\d+)\s*$/m.exec(source.replace(/\r/g, ""));
-  if (!byteRow) return null;
-  const rxBytes = Number(byteRow[1]);
-  const txBytes = Number(byteRow[2]);
-  if (!Number.isSafeInteger(rxBytes) || !Number.isSafeInteger(txBytes)) return null;
-  return { interface: "Windows", rxBytes, txBytes, wrapsAt: WINDOWS_COUNTER_RANGE };
+export function parseWindowsSubinterfaces(source: string): NetworkTotals | null {
+  let rxBytes = 0;
+  let txBytes = 0;
+  let interfaces = 0;
+  for (const line of source.replace(/\r/g, "").split("\n")) {
+    const row = /^\s*(\d+)\s+\d+\s+(\d+)\s+(\d+)\s+\S/.exec(line);
+    if (!row || Number(row[1]) === LOOPBACK_MTU) continue;
+    rxBytes += Number(row[2]);
+    txBytes += Number(row[3]);
+    interfaces += 1;
+  }
+  if (interfaces === 0 || !Number.isSafeInteger(rxBytes) || !Number.isSafeInteger(txBytes)) return null;
+  return { interface: "Windows", rxBytes, txBytes };
 }
 
 let runsInWsl: Promise<boolean> | null = null;
@@ -198,8 +194,8 @@ function isWsl(): Promise<boolean> {
 
 async function readWindowsNetworkTotals(signal: AbortSignal): Promise<NetworkTotals | null> {
   try {
-    const { stdout } = await execFileAsync(WINDOWS_NETSTAT, ["-e"], { timeout: 1500, maxBuffer: 64 * 1024, signal, windowsHide: true });
-    return parseWindowsNetstat(stdout);
+    const { stdout } = await execFileAsync(WINDOWS_NETSH, ["interface", "ipv4", "show", "subinterfaces"], { timeout: 1500, maxBuffer: 64 * 1024, signal, windowsHide: true });
+    return parseWindowsSubinterfaces(stdout);
   } catch {
     return null;
   }
@@ -310,11 +306,11 @@ export function createCollector(refreshIntervalMs: () => number) {
   const history: MetricPoint[] = [];
 
   async function takeBaseline(signal: AbortSignal) {
+    previousNetworkTotals = await readNetworkTotals(signal);
+    previousNetworkTimestamp = performance.now();
     const cpuList = cpus();
     previousCpuTimes = readCpuTimes(cpuList);
     previousPerCoreTimes = cpuList.map(cpuTimesFor);
-    previousNetworkTotals = await readNetworkTotals(signal);
-    previousNetworkTimestamp = performance.now();
     await sleep(BASELINE_WINDOW_MS, undefined, { signal });
   }
 
@@ -355,8 +351,8 @@ export function createCollector(refreshIntervalMs: () => number) {
     const network = networkTotals === null ? null : {
       interface: networkTotals.interface,
       ...calculateNetworkRates(previousNetworkTotals, networkTotals, elapsedSeconds),
-      rxTotalBytes: networkTotals.wrapsAt ? null : networkTotals.rxBytes,
-      txTotalBytes: networkTotals.wrapsAt ? null : networkTotals.txBytes,
+      rxTotalBytes: networkTotals.rxBytes,
+      txTotalBytes: networkTotals.txBytes,
     };
     previousNetworkTotals = networkTotals;
     previousNetworkTimestamp = networkTimestamp;

@@ -24,7 +24,7 @@ extern int64_t IOReportSimpleGetIntegerValue(CFDictionaryRef channel, int32_t in
 extern CFStringRef IOReportChannelGetChannelName(CFDictionaryRef channel);
 extern CFStringRef IOReportChannelGetUnitLabel(CFDictionaryRef channel);
 
-enum { TEMPERATURE_EVENT = 15, MIN_SAMPLE_MS = 250, MAX_KEYS = 256 };
+enum { TEMPERATURE_EVENT = 15, MIN_SAMPLE_MS = 250, MAX_SAMPLE_MS = 65000, MAX_KEYS = 256, ENERGY_RETRY_EVERY = 12 };
 
 typedef struct { char major, minor, build, reserved; uint16_t release; } SmcVersion;
 typedef struct { uint16_t version, length; uint32_t cpuLimit, gpuLimit, memoryLimit; } SmcLimits;
@@ -83,15 +83,20 @@ static int number_dictionary_entry(CFMutableDictionaryRef dictionary, const char
   return 0;
 }
 
-static void read_hid_temperatures(double *cpu, double *gpu) {
-  double cpuSum = 0, gpuSum = 0;
-  int cpuCount = 0, gpuCount = 0;
+static IOHIDEventSystemClientRef open_hid_temperatures(void) {
   IOHIDEventSystemClientRef client = IOHIDEventSystemClientCreate(kCFAllocatorDefault);
-  if (!client) return;
+  if (!client) return NULL;
   CFMutableDictionaryRef matching = CFDictionaryCreateMutable(NULL, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
   number_dictionary_entry(matching, "PrimaryUsagePage", 0xff00);
   number_dictionary_entry(matching, "PrimaryUsage", 5);
   IOHIDEventSystemClientSetMatching(client, matching);
+  CFRelease(matching);
+  return client;
+}
+
+static void read_hid_temperatures(IOHIDEventSystemClientRef client, double *cpu, double *gpu) {
+  double cpuSum = 0, gpuSum = 0;
+  int cpuCount = 0, gpuCount = 0;
   CFArrayRef services = IOHIDEventSystemClientCopyServices(client);
   if (services) {
     for (CFIndex index = 0; index < CFArrayGetCount(services); index++) {
@@ -117,8 +122,6 @@ static void read_hid_temperatures(double *cpu, double *gpu) {
     }
     CFRelease(services);
   }
-  CFRelease(matching);
-  CFRelease(client);
   if (cpuCount) *cpu = cpuSum / cpuCount;
   if (gpuCount) *gpu = gpuSum / gpuCount;
 }
@@ -135,13 +138,16 @@ static double joules(int64_t value, CFStringRef unit) {
 typedef struct {
   io_connect_t smc;
   uint32_t keys[MAX_KEYS];
+  SmcKeyInfo keyInfos[MAX_KEYS];
   int keyCount;
+  IOHIDEventSystemClientRef hid;
   CFDictionaryRef channels;
   CFMutableDictionaryRef mutableChannels;
   CFMutableDictionaryRef subscribed;
   IOReportSubscriptionRef subscription;
   CFDictionaryRef previous;
   uint64_t previousAt;
+  int energyRetryIn;
 } Sampler;
 
 static int is_temperature_key(uint32_t key) {
@@ -160,7 +166,12 @@ static void find_temperature_keys(Sampler *sampler) {
     SmcCall input = {0}, output;
     input.data8 = SMC_KEY_AT_INDEX;
     input.data32 = index;
-    if (smc_call(sampler->smc, &input, &output) && is_temperature_key(output.key)) sampler->keys[sampler->keyCount++] = output.key;
+    if (!smc_call(sampler->smc, &input, &output) || !is_temperature_key(output.key)) continue;
+    SmcKeyInfo info;
+    if (!smc_key_info(sampler->smc, output.key, &info) || info.dataType != four_char_code("flt ") || info.dataSize != 4) continue;
+    sampler->keys[sampler->keyCount] = output.key;
+    sampler->keyInfos[sampler->keyCount] = info;
+    sampler->keyCount++;
   }
 }
 
@@ -177,10 +188,8 @@ static void read_smc_temperatures(Sampler *sampler, double *cpu, double *gpu) {
   int cpuCount = 0, gpuCount = 0;
   for (int index = 0; index < sampler->keyCount; index++) {
     uint32_t key = sampler->keys[index];
-    SmcKeyInfo info;
     unsigned char bytes[32];
-    if (!smc_key_info(sampler->smc, key, &info) || info.dataType != four_char_code("flt ") || info.dataSize != 4) continue;
-    if (!smc_read(sampler->smc, key, info, bytes)) continue;
+    if (!smc_read(sampler->smc, key, sampler->keyInfos[index], bytes)) continue;
     float celsius;
     memcpy(&celsius, bytes, sizeof celsius);
     if (!(celsius > 0 && celsius <= 150) || celsius == (float)(int)celsius) continue;
@@ -192,22 +201,53 @@ static void read_smc_temperatures(Sampler *sampler, double *cpu, double *gpu) {
 }
 
 static uint64_t now_ns(void) {
-  return clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+  return clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW);
 }
 
-static void open_energy(Sampler *sampler) {
+static void release_energy(Sampler *sampler) {
+  if (sampler->subscription) CFRelease((CFTypeRef)sampler->subscription);
+  if (sampler->subscribed) CFRelease(sampler->subscribed);
+  if (sampler->mutableChannels) CFRelease(sampler->mutableChannels);
+  if (sampler->channels) CFRelease(sampler->channels);
+  sampler->subscription = NULL;
+  sampler->subscribed = NULL;
+  sampler->mutableChannels = NULL;
+  sampler->channels = NULL;
+}
+
+static int subscribe_energy(Sampler *sampler) {
   sampler->channels = IOReportCopyChannelsInGroup(CFSTR("Energy Model"), NULL, 0, 0, 0);
-  if (!sampler->channels) return;
-  sampler->mutableChannels = CFDictionaryCreateMutableCopy(NULL, 0, sampler->channels);
-  sampler->subscription = IOReportCreateSubscription(NULL, sampler->mutableChannels, &sampler->subscribed, 0, NULL);
-  if (!sampler->subscription || !sampler->subscribed) return;
+  if (sampler->channels) {
+    sampler->mutableChannels = CFDictionaryCreateMutableCopy(NULL, 0, sampler->channels);
+    sampler->subscription = IOReportCreateSubscription(NULL, sampler->mutableChannels, &sampler->subscribed, 0, NULL);
+  }
+  if (sampler->subscription && sampler->subscribed) return 1;
+  release_energy(sampler);
+  return 0;
+}
+
+static void take_energy_baseline(Sampler *sampler) {
   sampler->previous = IOReportCreateSamples(sampler->subscription, sampler->subscribed, NULL);
   sampler->previousAt = now_ns();
 }
 
 static void read_power(Sampler *sampler, double *cpu, double *gpu) {
-  if (!sampler->previous) return;
-  if ((now_ns() - sampler->previousAt) / 1000000 < MIN_SAMPLE_MS) return;
+  if (!sampler->subscription) {
+    if (sampler->energyRetryIn-- > 0) return;
+    sampler->energyRetryIn = ENERGY_RETRY_EVERY;
+    if (!subscribe_energy(sampler)) return;
+  }
+  if (!sampler->previous) {
+    take_energy_baseline(sampler);
+    return;
+  }
+  uint64_t elapsedMs = (now_ns() - sampler->previousAt) / 1000000;
+  if (elapsedMs < MIN_SAMPLE_MS) return;
+  if (elapsedMs > MAX_SAMPLE_MS) {
+    CFRelease(sampler->previous);
+    take_energy_baseline(sampler);
+    return;
+  }
   CFDictionaryRef current = IOReportCreateSamples(sampler->subscription, sampler->subscribed, NULL);
   uint64_t currentAt = now_ns();
   if (!current) return;
@@ -240,8 +280,8 @@ static void read_power(Sampler *sampler, double *cpu, double *gpu) {
     gpuJoules = gpuFallbackJoules;
     gpuSeen = 1;
   }
-  if (cpuSeen && seconds > 0) *cpu = cpuJoules / seconds;
-  if (gpuSeen && seconds > 0) *gpu = gpuJoules / seconds;
+  if (cpuSeen && cpuJoules > 0 && seconds > 0) *cpu = cpuJoules / seconds;
+  if (gpuSeen && gpuJoules > 0 && seconds > 0) *gpu = gpuJoules / seconds;
   CFRelease(sampler->previous);
   sampler->previous = current;
   sampler->previousAt = currentAt;
@@ -274,7 +314,10 @@ static void print_number(const char *key, double value, const char *separator) {
 static void print_reading(Sampler *sampler) {
   double cpuTemp = -1, gpuTemp = -1, cpuWatts = -1, gpuWatts = -1;
   if (sampler->smc) read_smc_temperatures(sampler, &cpuTemp, &gpuTemp);
-  if (cpuTemp < 0) read_hid_temperatures(&cpuTemp, &gpuTemp);
+  if (cpuTemp < 0) {
+    if (!sampler->hid) sampler->hid = open_hid_temperatures();
+    if (sampler->hid) read_hid_temperatures(sampler->hid, &cpuTemp, &gpuTemp);
+  }
   read_power(sampler, &cpuWatts, &gpuWatts);
   printf("{");
   print_number("cpuTempC", cpuTemp, ",");
@@ -286,15 +329,11 @@ static void print_reading(Sampler *sampler) {
   fflush(stdout);
 }
 
-int main(int argc, char **argv) {
+int main(void) {
   Sampler sampler = {0};
   open_smc(&sampler);
-  open_energy(&sampler);
-  if (argc > 1 && strcmp(argv[1], "--serve") == 0) {
-    char request[64];
-    while (fgets(request, sizeof request, stdin)) print_reading(&sampler);
-    return 0;
-  }
-  print_reading(&sampler);
+  if (subscribe_energy(&sampler)) take_energy_baseline(&sampler);
+  char request[64];
+  while (fgets(request, sizeof request, stdin)) print_reading(&sampler);
   return 0;
 }

@@ -71,9 +71,9 @@ CLI snapshots share the dashboard collector. Repeated calls keep history alive. 
 - **Battery** on macOS (`ioreg`) and Linux (`/sys/class/power_supply`): charge, state, time left, health from full and design capacity, cycles and power. macOS also gives the battery temperature.
 - **CPU and GPU temperature and power on Apple silicon Macs**, plus GPU usage. Temperature comes from the SMC, power from IOReport energy counters, and GPU usage from the GPU's IOKit statistics. None need root.
 - **Tailscale** name, address and tags, read from `tailscale status --json` once a minute, with copy buttons.
-- **WSL** machines show Windows' network traffic from `netstat.exe -e`.
+- **WSL** machines show Windows' network traffic from `netsh.exe interface ipv4 show subinterfaces`, whose byte counters are 64-bit.
 
-The temperature and power readings come from a small helper in `native/beacon-sensors.c`. `native/build.sh` builds it on an Apple silicon Mac and embeds it in `lib/mac-sensors-binary.ts` with its SHA-256. Beacon writes it to `~/Library/Caches/bb-plugin-beacon`, which only the user can write to, checks its owner, permissions and hash once per process, and starts it once. The helper keeps its sensor connections open and answers one reading per line on stdin, so a poll starts no new process. Power is averaged over the time since the previous reading, so the first reading after the helper starts has none. If the helper exits or stops answering, Beacon starts it again, and writes the file again if it has gone. The helper stops when Beacon is unloaded. Rebuild it whenever the C source changes; a test fails if the embedded helper and its recorded hash disagree.
+The temperature and power readings come from a small helper in `native/beacon-sensors.c`. `native/build.sh` builds it on an Apple silicon Mac and embeds it in `lib/mac-sensors-binary.ts` with its SHA-256. Beacon writes it to `~/Library/Caches/bb-plugin-beacon`, which only the user can write to, checks its owner, permissions and hash once per process, and starts it once. The helper keeps its sensor connections open and answers one reading per line on stdin, so a poll starts no new process. Power is averaged over the time since the previous reading. The first reading after the helper starts has none, nor does a reading more than 65 seconds after the previous one, such as after the panel was closed or the Mac slept. Counters that report no energy at all are treated as unavailable, not as 0 W. If the helper exits or stops answering within 3 seconds, Beacon stops it and starts a new one, checking the file again first. A helper problem leaves the sensor values empty; it never fails the rest of the snapshot. Helper files from other Beacon versions are removed once they are a day old. The helper stops when Beacon is unloaded. Rebuild it whenever the C source changes; a test fails if the embedded helper and its recorded hash disagree.
 
 ## What the numbers mean
 
@@ -87,7 +87,7 @@ Swap appears only when a swap total greater than zero is readable. Beacon never 
 
 Disk is `/`. Used space is allocated blocks. Available excludes reserved blocks, so used plus available may not equal total.
 
-Network is received and sent bytes per second on the non-loopback interface with the most cumulative traffic. Not a sum of interfaces. Rates go unavailable when the interface changes or counters reset. Windows' counters are 32-bit, so Beacon allows for them wrapping and does not show their running totals. Linux reads `/proc/net/dev`, macOS `netstat -ibn` and WSL Windows' `netstat.exe -e`.
+Network is received and sent bytes per second on the non-loopback interface with the most cumulative traffic. Not a sum of interfaces, except on WSL, where Windows' non-loopback interfaces are summed. Rates go unavailable when the interface changes or counters reset. Linux reads `/proc/net/dev`, macOS `netstat -ibn` and WSL `netsh.exe`.
 
 Snapshots list six PIDs by lifetime-average CPU, PID as tie-break. The popover shows the first five. Process CPU is relative to one core and can exceed 100%. That is not the sampled host CPU.
 

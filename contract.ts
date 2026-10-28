@@ -62,8 +62,8 @@ export const snapshotSchema = z.object({
     interface: z.string(),
     rxBytesPerSecond: z.number().nullable(),
     txBytesPerSecond: z.number().nullable(),
-    rxTotalBytes: z.number().nullable(),
-    txTotalBytes: z.number().nullable(),
+    rxTotalBytes: z.number(),
+    txTotalBytes: z.number(),
   }).nullable(),
   battery: z.object({
     percent: percentageSchema,

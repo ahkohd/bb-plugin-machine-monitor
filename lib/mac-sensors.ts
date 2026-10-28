@@ -21,11 +21,6 @@ function finiteOrNull(value: unknown, max: number): number | null {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= max ? value : null;
 }
 
-function measuredWatts(value: unknown): number | null {
-  const watts = finiteOrNull(value, 1000);
-  return watts === null || watts === 0 ? null : watts;
-}
-
 export function parseSensorOutput(source: string): MacSensors | null {
   try {
     const parsed: unknown = JSON.parse(source);
@@ -34,8 +29,8 @@ export function parseSensorOutput(source: string): MacSensors | null {
     return {
       cpuTempC: finiteOrNull(value.cpuTempC, 150),
       gpuTempC: finiteOrNull(value.gpuTempC, 150),
-      cpuWatts: measuredWatts(value.cpuWatts),
-      gpuWatts: measuredWatts(value.gpuWatts),
+      cpuWatts: finiteOrNull(value.cpuWatts, 1000),
+      gpuWatts: finiteOrNull(value.gpuWatts, 1000),
       gpuPercent: finiteOrNull(value.gpuPercent, 100),
     };
   } catch {
@@ -70,17 +65,23 @@ async function holdsHelper(path: string): Promise<boolean> {
 
 const HELPER_NAME = `beacon-sensors-${MAC_SENSORS_DIGEST.slice(0, 16)}`;
 
-async function removeOlderHelpers(): Promise<void> {
+const UNUSED_HELPER_AGE_MS = 24 * 60 * 60_000;
+
+async function removeUnusedHelpers(): Promise<void> {
   const names = await readdir(HELPER_DIRECTORY).catch(() => []);
   await Promise.all(names
-    .filter((name) => name.startsWith("beacon-sensors-") && name !== HELPER_NAME && !name.endsWith(".partial"))
-    .map((name) => rm(join(HELPER_DIRECTORY, name), { force: true })));
+    .filter((name) => name.startsWith("beacon-sensors-") && name !== HELPER_NAME)
+    .map(async (name) => {
+      const path = join(HELPER_DIRECTORY, name);
+      const stats = await lstat(path).catch(() => null);
+      if (stats && Date.now() - stats.mtimeMs > UNUSED_HELPER_AGE_MS) await rm(path, { force: true }).catch(() => undefined);
+    }));
 }
 
 async function writeHelper(): Promise<string | null> {
   await mkdir(HELPER_DIRECTORY, { recursive: true, mode: 0o700 }).catch(() => undefined);
   if (!(await ownedAndPrivate(HELPER_DIRECTORY, "directory"))) return null;
-  await removeOlderHelpers();
+  await removeUnusedHelpers();
   const path = join(HELPER_DIRECTORY, HELPER_NAME);
   if (await holdsHelper(path)) return path;
   const partial = `${path}.${process.pid}.${Date.now()}.partial`;
@@ -94,76 +95,83 @@ async function writeHelper(): Promise<string | null> {
   }
 }
 
-interface RunningHelper {
-  request(): Promise<string | null>;
+export interface SensorHelper {
+  request(timeoutMs: number): Promise<string | null>;
   stop(): void;
 }
 
-let runningHelper: RunningHelper | null = null;
-
-function startHelper(path: string): RunningHelper {
-  const child = spawn(path, ["--serve"], { stdio: ["pipe", "pipe", "ignore"] });
+export function startHelper(path: string, onExit: () => void = () => undefined): SensorHelper {
+  const child = spawn(path, [], { stdio: ["pipe", "pipe", "ignore"] });
   const waiting: Array<(line: string | null) => void> = [];
+  let exited = false;
   const finish = () => {
-    if (runningHelper === helper) runningHelper = null;
+    if (exited) return;
+    exited = true;
     for (const resolve of waiting.splice(0)) resolve(null);
+    onExit();
   };
-  const helper: RunningHelper = {
-    request: () => new Promise((resolve) => {
-      waiting.push(resolve);
-      child.stdin.write("\n");
-    }),
-    stop: () => child.kill(),
-  };
-  createInterface({ input: child.stdout }).on("line", (line) => waiting.shift()?.(line));
-  child.on("exit", finish);
-  child.on("error", (error: NodeJS.ErrnoException) => {
-    if (error.code === "ENOENT" || error.code === "EACCES") helperPath = null;
+  const stop = () => {
+    child.kill("SIGKILL");
     finish();
-  });
-  child.stdin.on("error", finish);
+  };
+  child.on("exit", finish);
+  child.on("error", finish);
+  child.stdin?.on("error", finish);
+  if (child.stdout) createInterface({ input: child.stdout }).on("line", (line) => waiting.shift()?.(line));
   child.unref();
-  (child.stdin as unknown as Socket).unref();
-  (child.stdout as unknown as Socket).unref();
-  return helper;
+  (child.stdin as unknown as Socket | null)?.unref();
+  (child.stdout as unknown as Socket | null)?.unref();
+  return {
+    request(timeoutMs) {
+      if (exited || !child.stdin) return Promise.resolve(null);
+      return new Promise((resolve) => {
+        const timer = setTimeout(stop, timeoutMs);
+        waiting.push((line) => {
+          clearTimeout(timer);
+          resolve(line);
+        });
+        child.stdin.write("\n");
+      });
+    },
+    stop,
+  };
 }
 
+let runningHelper: SensorHelper | null = null;
+let lifetime = 0;
+
 export function stopMacSensors(): void {
+  lifetime += 1;
   runningHelper?.stop();
   runningHelper = null;
 }
 
-async function helperFor(): Promise<RunningHelper | null> {
+async function helperFor(signal: AbortSignal): Promise<SensorHelper | null> {
   if (runningHelper) return runningHelper;
-  helperPath ??= writeHelper().then((path) => {
+  const requestedIn = lifetime;
+  helperPath ??= writeHelper().catch(() => null).then((path) => {
     if (path === null) helperPath = null;
     return path;
   });
   const path = await helperPath;
-  if (path === null) return null;
-  runningHelper ??= startHelper(path);
-  return runningHelper;
-}
-
-async function readHelper(signal: AbortSignal): Promise<MacSensors | null> {
-  const helper = await helperFor();
-  if (!helper || signal.aborted) return null;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timedOut = new Promise<null>((resolve) => {
-    timer = setTimeout(() => {
-      helper.stop();
-      resolve(null);
-    }, READING_TIMEOUT_MS);
+  if (path === null || signal.aborted || lifetime !== requestedIn) return null;
+  if (runningHelper) return runningHelper;
+  const helper = startHelper(path, () => {
+    if (runningHelper !== helper) return;
+    runningHelper = null;
+    helperPath = null;
   });
-  try {
-    const line = await Promise.race([helper.request(), timedOut]);
-    return line === null ? null : parseSensorOutput(line);
-  } finally {
-    clearTimeout(timer);
-  }
+  runningHelper = helper;
+  return helper;
 }
 
-export function readMacSensors(signal: AbortSignal): Promise<MacSensors | null> {
-  if (platform() !== "darwin" || arch() !== "arm64") return Promise.resolve(null);
-  return readHelper(signal);
+export async function readMacSensors(signal: AbortSignal): Promise<MacSensors | null> {
+  if (platform() !== "darwin" || arch() !== "arm64") return null;
+  try {
+    const helper = await helperFor(signal);
+    const line = helper ? await helper.request(READING_TIMEOUT_MS) : null;
+    return line === null ? null : parseSensorOutput(line);
+  } catch {
+    return null;
+  }
 }

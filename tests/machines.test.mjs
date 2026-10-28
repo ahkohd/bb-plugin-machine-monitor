@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createFakePluginHost, makeHostResponse } from "@get-bb/plugin-sdk/testing";
-import plugin, { parseNetstatLinks, parseWindowsNetstat } from "../server.ts";
+import plugin, { parseNetstatLinks, parseWindowsSubinterfaces } from "../server.ts";
 import hostEntry from "../host.ts";
 
 const SERVER_HOST = "host_server";
@@ -92,19 +92,19 @@ test("a remote machine reports the new refresh interval even from its cache", as
   assert.equal(cached.refreshIntervalMs, 60_000);
 });
 
-test("WSL reads Windows' network totals from netstat -e", () => {
+test("WSL reads Windows' 64-bit network totals from netsh subinterfaces", () => {
   const output = [
-    "Interface Statistics",
     "",
-    "                           Received            Sent",
-    "",
-    "Bytes                    2217282166      3811487087",
-    "Unicast packets            17785704        26580608",
+    "       MTU  MediaSenseState      Bytes In     Bytes Out  Interface",
+    "----------  ---------------  ------------  ------------  -------------",
+    "4294967295                1             0          1400  Loopback Pseudo-Interface 1",
+    "      1500                1    5062009579      33495802  Ethernet",
+    "      1500                1        120000          8000  vEthernet (WSL)",
   ].join("\r\n");
-  assert.deepEqual(parseWindowsNetstat(output), { interface: "Windows", rxBytes: 2217282166, txBytes: 3811487087, wrapsAt: 2 ** 32 });
-  const french = output.replace("Received            Sent", "Reçus            Envoyés").replace("Bytes   ", "Octets  ").replace("Unicast packets", "Paquets unicast");
-  assert.equal(parseWindowsNetstat(french)?.rxBytes, 2217282166, "the byte row is found without its English label");
-  assert.equal(parseWindowsNetstat("The system cannot find the path specified."), null);
+  assert.deepEqual(parseWindowsSubinterfaces(output), { interface: "Windows", rxBytes: 5062129579, txBytes: 33503802 }, "64-bit totals past 4 GiB, summed without loopback");
+  const german = output.replace("Bytes In     Bytes Out  Interface", "Bytes ein    Bytes aus  Schnittstelle");
+  assert.equal(parseWindowsSubinterfaces(german)?.rxBytes, 5062129579, "rows are found without the English header");
+  assert.equal(parseWindowsSubinterfaces("The system cannot find the path specified."), null);
 });
 
 test("load errors read as plain messages without transport details", async () => {

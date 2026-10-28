@@ -29,9 +29,6 @@ test("network rates use actual elapsed time and reject warmup, resets and interf
   const current = { interface: "eth0", rxBytes: 110, txBytes: 230 };
   assert.deepEqual(calculateNetworkRates(previous, current, 5), { rxBytesPerSecond: 2, txBytesPerSecond: 6 });
   assert.deepEqual(calculateNetworkRates(previous, previous, 5), { rxBytesPerSecond: 0, txBytesPerSecond: 0 });
-  const windowsBefore = { interface: "Windows", rxBytes: 2 ** 32 - 100, txBytes: 50, wrapsAt: 2 ** 32 };
-  const windowsAfter = { ...windowsBefore, rxBytes: 400, txBytes: 550 };
-  assert.deepEqual(calculateNetworkRates(windowsBefore, windowsAfter, 5), { rxBytesPerSecond: 100, txBytesPerSecond: 100 }, "32-bit Windows counters wrap instead of resetting");
   for (const [prior, next, elapsed] of [[null, current, 5], [previous, current, null], [previous, current, 0], [previous, current, -5], [previous, current, NaN], [previous, { ...current, rxBytes: 1 }, 5], [previous, { ...current, txBytes: 1 }, 5], [previous, { ...current, interface: "eth1" }, 5]]) {
     assert.deepEqual(calculateNetworkRates(prior, next, elapsed), { rxBytesPerSecond: null, txBytesPerSecond: null });
   }

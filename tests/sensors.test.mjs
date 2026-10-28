@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { parseLinuxBattery, parseMacBattery } from "../lib/battery.ts";
-import { parseSensorOutput } from "../lib/mac-sensors.ts";
+import { parseSensorOutput, startHelper } from "../lib/mac-sensors.ts";
 
 const macIoreg = [
   '      "CurrentCapacity" = 23',
@@ -108,4 +108,37 @@ test("the embedded helper matches its recorded digest", async () => {
   const { createHash } = await import("node:crypto");
   assert.equal(createHash("sha256").update(Buffer.from(MAC_SENSORS_BINARY, "base64")).digest("hex"), MAC_SENSORS_DIGEST);
   assert.ok(readFileSync(new URL("../native/beacon-sensors.c", import.meta.url), "utf8").includes("IOReportCopyChannelsInGroup"));
+});
+
+async function fakeHelper(t, body) {
+  const { mkdtemp, writeFile, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const directory = await mkdtemp(join(tmpdir(), "beacon-fake-helper-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const path = join(directory, "helper");
+  await writeFile(path, `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+  return path;
+}
+
+test("the sensor helper answers one line per request, in order", async (t) => {
+  const path = await fakeHelper(t, `n=0; while read line; do n=$((n+1)); echo "{\\"cpuTempC\\":$n}"; done`);
+  const helper = startHelper(path);
+  t.after(() => helper.stop());
+  assert.equal(await helper.request(2000), '{"cpuTempC":1}');
+  assert.equal(await helper.request(2000), '{"cpuTempC":2}');
+});
+
+test("a hung, crashed or missing helper gives null and reports its exit", async (t) => {
+  for (const [name, body] of [["hung", "while read line; do sleep 30; done"], ["crashed", "read line; exit 1"]]) {
+    let exits = 0;
+    const helper = startHelper(await fakeHelper(t, body), () => { exits += 1; });
+    assert.equal(await helper.request(300), null, `${name} helper gives no reading`);
+    assert.equal(await helper.request(300), null, `${name} helper is not reused`);
+    assert.equal(exits, 1, `${name} helper reports one exit`);
+  }
+  let missingExits = 0;
+  const missing = startHelper("/nonexistent/beacon-sensors", () => { missingExits += 1; });
+  assert.equal(await missing.request(300), null);
+  assert.equal(missingExits, 1);
 });
