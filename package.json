@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-machine-monitor",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "description": "See CPU, GPU, memory, disk, network, battery, Tailscale and top processes for any of your bb machines from the sidebar.",
   "repository": {

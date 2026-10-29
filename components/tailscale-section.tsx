@@ -4,7 +4,7 @@ import {
   experimental_Icon as Icon,
 } from "@get-bb/plugin-sdk/app";
 import type { TailscaleInfo } from "../lib/tailscale.ts";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { HudTooltip, HudTooltipContent, HudTooltipTrigger } from "./hud-tooltip";
 import { cn } from "@/lib/utils";
 import { LoadingText } from "./metric-parts";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -45,8 +45,8 @@ function CopyValue({ label, value, title, labelControl }: { label: string; value
   return (
     <div className="flex items-center justify-between gap-2 text-xs">
       {labelControl ?? <span className="shrink-0 text-subtle-foreground/75">{label}</span>}
-      <Tooltip delayDuration={350} disableHoverableContent open={hovered || state !== "idle"} onOpenChange={setHovered}>
-        <TooltipTrigger asChild>
+      <HudTooltip delayDuration={350} disableHoverableContent open={hovered || state !== "idle"} onOpenChange={setHovered}>
+        <HudTooltipTrigger asChild>
           <button
             type="button"
             onClick={() => void copy()}
@@ -65,9 +65,9 @@ function CopyValue({ label, value, title, labelControl }: { label: string; value
             />
             <MiddleTruncated value={value} />
           </button>
-        </TooltipTrigger>
-        <TooltipContent side="top">{tooltip}</TooltipContent>
-      </Tooltip>
+        </HudTooltipTrigger>
+        <HudTooltipContent side="top">{tooltip}</HudTooltipContent>
+      </HudTooltip>
     </div>
   );
 }
@@ -123,8 +123,8 @@ function useIpVersion() {
 function IpVersionToggle({ version, onToggle }: { version: IpVersion; onToggle: () => void }) {
   const other = version === "IPv4" ? "IPv6" : "IPv4";
   return (
-    <Tooltip delayDuration={350} disableHoverableContent>
-      <TooltipTrigger asChild>
+    <HudTooltip delayDuration={350} disableHoverableContent>
+      <HudTooltipTrigger asChild>
         <button
           type="button"
           onClick={onToggle}
@@ -134,9 +134,9 @@ function IpVersionToggle({ version, onToggle }: { version: IpVersion; onToggle: 
           {version}
           <HugeiconsIcon icon={ArrowDataTransferHorizontalIcon} className="size-3 opacity-60 group-hover/ip:opacity-100" aria-hidden="true" />
         </button>
-      </TooltipTrigger>
-      <TooltipContent side="top">Show {other}</TooltipContent>
-    </Tooltip>
+      </HudTooltipTrigger>
+      <HudTooltipContent side="top">Show {other}</HudTooltipContent>
+    </HudTooltip>
   );
 }
 
